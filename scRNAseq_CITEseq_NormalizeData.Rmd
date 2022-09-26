@@ -1,0 +1,466 @@
+---
+title: "Normalize Data"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+author: "Laëtitia Racine"
+date: "15/12/2021"
+output: html_document
+---
+
+
+```{r, results = 'hold', height = 20, width = 20}
+
+DimPlot(test,group.by = "Phase")
+DimPlot(test,group.by = "orig.ident")
+DimPlot(test, group.by = "Phase",split.by = "orig.ident",ncol=3)
+test
+DimPlot(test,label=TRUE)+NoLegend()
+FeaturePlot(test,c("CD133","CD34"),max.cutoff = 100)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, eval=TRUE, message=FALSE, warnings=FALSE}
+library(dplyr)
+library(Seurat)
+library(sctransform)
+library(ggplot2)
+library(stringr)
+library(matrixStats)
+library(tibble)
+library(kableExtra)
+# BiocManager::install("glmGamPoi")
+```
+
+```{r manual_inputs, eval=TRUE}
+
+# Output directories
+dir = "/home/rparmentier/Documents/Git_10XRNAseqCITEseq_Metabo/"
+# currentDate <- paste0(substr(Sys.Date(), 1,4), substr(Sys.Date(),6,7), substr(Sys.Date(),9, 10))
+currentDate = "20220221"
+dir.create(path = paste0(dir, "exp/", currentDate))
+dir_output = paste0(dir, "exp/", currentDate, "/Normalize_Data/")
+dir.create(path = dir_output)
+
+# Input directories
+dir_input1 = paste0(dir, "exp/", currentDate, "/Create_SeuratObject/")
+dir_input2 = paste0(dir, "exp/", currentDate, "/Filter_Data/")
+
+# Variable pour déterminer si on applique une régression sur le cycle cellulaire ou non
+regress_cc = FALSE
+
+```
+
+```{r load_files, eval=TRUE}
+list_obj = c("data_allcond" = readRDS(paste0(dir_input1, "data_allcond.rds")), 
+             "data_allcond_filter_nbG" = readRDS(paste0(dir_input2, "data_allcond_filter_nbG.rds")),
+             "data_allcond_filter_nbG_pMT" = readRDS(paste0(dir_input2, "data_allcond_filter_nbG_pMT.rds")),
+             "data_allcond_filter_nbG_pMT_pRB" = readRDS(paste0(dir_input2, "data_allcond_filter_nbG_pMT_pRB.rds")),
+             "data_allcond_filter_nbG_pMT_pRB_rmMT" = readRDS(paste0(dir_input2, "data_allcond_filter_nbG_pMT_pRB_rmMT.rds")))
+# stat_tab = read.csv2(file = paste0(dir_input2, "stat_tab_filter.csv"))
+```
+
+# .Objectif du code 
+
+Ce code **permet de** :  
+
+- I : normaliser les objets Seurat donnés en entrée avec les fonctions de base de Seurat (assay : "RNA")
+https://satijalab.org/seurat/articles/pbmc3k_tutorial.html
+https://satijalab.org/seurat/reference/normalizedata  
+https://satijalab.org/seurat/reference/findvariablefeatures  
+https://satijalab.org/seurat/reference/scaledata  
+
+- II : visualiser les effets du cycle cellulaire et appliquer une régression si nécessaire
+https://satijalab.org/seurat/articles/cell_cycle_vignette.html
+https://hbctraining.github.io/scRNA-seq/lessons/06_SC_SCT_and_integration.html
+https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html#Calculate_cell-cycle_scores
+https://satijalab.org/seurat/archive/v3.1/cell_cycle_vignette.html  
+
+- III : normaliser l'objet Seurat donné en entrée avec SCTransform (assay : "SCT")
+https://chipster.csc.fi/manual/single-cell-seurat-sctransform.html
+https://satijalab.org/seurat/articles/sctransform_vignette.html
+https://www.biostars.org/p/446554/
+https://cran.r-project.org/web/packages/sctransform/sctransform.pdf
+https://rdrr.io/cran/sctransform/man/vst.html
+
+L'ordre est ici important. Comme indiqué dans l'issue : https://github.com/satijalab/seurat/issues/1679, il convient de faire d'abord la normalisation classique, puis le CellCycleScoring et ansuite d'ajouter le cell cycle scores dans vars.to.regress dans la normalisation SCTransform. On obtient **en sortie** des objets Seurat dont l'influence du cycle cellulaire a été enlevée et avec deux types de normalisation acessibles en changeant l'assay de travail. Pour la suite des "downstream analysis", il est conseillé de travailler avec l'assay "SCT".
+
+<!--*************************************************************************-->
+<br><br><br>
+<!--*************************************************************************-->
+
+# Normalisation avec Seurat
+
+## NormalizeData()
+```{r Normalize_data}
+
+list_obj = lapply(list_obj, function(x) { NormalizeData(object = x, 
+                                                        assay = "RNA",
+                                                        normalization.method = "LogNormalize",
+                                                        scale.factor = 10000,
+                                                        verbose = TRUE) })
+
+```
+NormalizeData() avec la méthode “LogNormalize” : soit x le nombre d'UMI d'un gène détecté dans une cellule. Pour normaliser cette donnée, on divise x par la somme de tous les UMIs détectés pour tous les gènes de cette cellule. Il est ensuite multiplié par le *scaling factor* qui est par défaut à 10 000. On ajoute 1 au résultat et on calcule ensuite son logarithme naturel (ln). (source de l'explication du calcul : https://github.com/satijalab/seurat/issues/3630).  
+"LogNormalize scales the data by library size so it eliminates the confounding effect of different read depth across the cells."
+
+## FindVariableFeatures()
+```{r FindVariableFeatures, message=FALSE, results='hold'}
+
+list_obj = lapply(list_obj, function(x) { FindVariableFeatures(object = x, 
+                                                              assay = "RNA",
+                                                              selection.method = "vst",
+                                                              nfeatures = "3000",   # pour correspondre à ce qu'on fera ensuite avec SCT^
+                                                              verbose = TRUE) })
+
+for (i in 1:length(list_obj)) {
+
+  obj = list_obj[[i]]
+  name_obj = names(list_obj)[i]
+  variable_genes = VariableFeatures(obj)
+  saveRDS(object = variable_genes, file = paste0(dir_output, "list_2000genes_", name_obj, ".rds"))
+
+  plot_vfeature = LabelPoints(plot = VariableFeaturePlot(obj), points = head(variable_genes, 20), repel = TRUE) +
+    theme(plot.background = element_rect(fill = "white")) +
+    ggtitle(name_obj)
+  ggsave(plot = plot_vfeature, filename = paste0(dir_output, "plot_logNorm_vfeature_", name_obj, ".png"), height = 4, width = 8)
+  print(plot_vfeature).
+
+}
+
+```
+FindVariableFeatures() sélectionne un sous-échantillon de gènes à garder pour la suite de l'analyse. On choisit ici 2000 gènes (nombre par défaut) qui correspondent aux gènes présentant le plus de variation entre les cellules, cad qu'ils sont fortement exprimés dans certaines cellules et faiblement pour d'autres. Cette sélection de gènes s'applique sur tout le dataset sans distinction de condition.   
+Pour extraire cette liste de gènes, on utilise la méthode "vst" : First, fits a line to the relationship of log(variance) and log(mean) using local polynomial regression. Then standardizes the feature values using the observed mean and expected variance (given by the fitted line). Feature variance is then calculated on the standardized values after clipping to a maximum (see clip.max parameter).
+*Les prochaines analyses comme les UMAP ou PCA seront tracées sur la base de ces 2000 gènes.*
+
+## ScaleData()
+```{r ScaleData}
+
+list_obj = lapply(list_obj, function(x) { ScaleData(object = x, 
+                                                    assay = "RNA",
+                                                    split.by = "orig.ident",
+                                                    verbose = TRUE) })
+
+```
+- ScaleData() : linear transformation
+Shifts the expression of each gene, so that the mean expression across cells is 0
+Scales the expression of each gene, so that the variance across cells is 1
+This step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate
+Pour le fait de faire un scaling différent en fonction du orig.ident, pourquoi pas. Ca peut potentiellement tirer un peu sur les gènes qui ont des grosses disparités entre conditions pour la PCA, mais c'est pas forcément un mal car c'est ce qui t'intéresse.
+
+Setting center to TRUE will center the expression for each feature by subtracting the average expression for that feature. Setting scale to TRUE will scale the expression level for each feature by dividing the centered feature expression levels by their standard deviations if center is TRUE and by their root mean square otherwise. 
+
+Since highly expressed genes exhibit the highest amount of variation and we don’t want our ‘highly variable genes’ only to reflect high expression, we need to scale the data to scale variation with expression level. The Seurat ScaleData() function will scale the data by:
+adjusting the expression of each gene to give a mean expression across cells to be 0
+scaling expression of each gene to give a variance across cells to be 1
+https://hbctraining.github.io/scRNA-seq_online/lessons/06_SC_SCT_normalization.html
+
+premier scale sans régression, il est possible de refaire un autre scale après en rajoutant une régression = > therefore overwriting the output of ScaleData()
+
+
+```{r, enregistrement facultatif objet intermediaire partie1, eval = FALSE}
+
+lapply(seq_along(list_obj), function(x) {
+  name_obj = names(list_obj)[[x]]
+  # print(paste("Enregistrement de la normalisation de:", name_obj))
+  saveRDS(object = list_obj[[x]], file = paste0(dir_output, name_obj, "_part1_normalized.rds")) 
+})
+
+```
+
+```{r}
+rm(plot_vfeature, obj, name_obj, i, variable_genes)
+```
+
+
+<!--*************************************************************************-->
+<br><br><br>
+<!--*************************************************************************-->
+
+
+
+
+# Etude de l'influence du cycle cellulaire sur les variations observées 
+
+```{r, eval = FALSE}
+list_obj = c("data_allcond" = readRDS(paste0(dir_output, "data_allcond_part1_normalized.rds")), 
+             "data_allcond_filter_nbG" = readRDS(paste0(dir_output, "data_allcond_filter_nbG_part1_normalized.rds")),
+             "data_allcond_filter_nbG_pMT" = readRDS(paste0(dir_output, "data_allcond_filter_nbG_pMT_part1_normalized.rds")),
+             "data_allcond_filter_nbG_pMT_pRB" = readRDS(paste0(dir_output, "data_allcond_filter_nbG_pMT_pRB_part1_normalized.rds")),
+             "data_allcond_filter_nbG_pMT_pRB_rmMT" = readRDS(paste0(dir_output, "data_allcond_filter_nbG_pMT_pRB_rmMT_part1_normalized.rds")))
+```
+
+
+Pour étudier le cycle cellulaire, les données doivent avoir été préalablement normalisées et mises à l'échelle. On utilise ensuite une liste de gènes (contenue dans la fonction Seurat cc.genes) associés aux phases du cycle cellulaire S et G2M, pour associer un score à chaque cellule les plaçant dans une phase ou l'autre. les marqueurs sont anticorrélés dans les cellules et celles qui n'en expriment aucun ne sont pas en phase de division ou alors sont en phase G1.  
+
+Les marqueurs associés à la phase S sont au nombre de 43 : 
+```{r}
+cc.genes$s.genes
+```
+Les marqueurs associés à la phase G2M sont au nombre de 54 : 
+```{r}
+cc.genes$g2m.genes
+```
+
+L'identification de la phase du cycle cellulaire pour les cellules permettra de " mitigate the effects of cell cycle heterogeneity in scRNA-seq data by calculating cell cycle phase scores based on canonical markers, and regressing these out of the data during pre-processing.".  
+
+## Attribution d'un score de cycle cellulaire pour les cellules
+```{r, results = 'hold', fig.width=20, fig.height=6, fig.fullwidth=TRUE}
+
+list_obj = lapply(list_obj, function(x) { CellCycleScoring(object = x, 
+                                                           assay = "RNA",
+                                                           s.features = cc.genes$s.genes,
+                                                           g2m.features = cc.genes$g2m.genes,
+                                                           set.ident = TRUE,
+                                                           verbose = TRUE) })
+
+for (i in 1:length(list_obj)) {
+  
+  obj = list_obj[[i]]
+  name_obj = names(list_obj)[i]
+  
+  plot.s = VlnPlot(object = obj, features = "S.Score", 
+                   group.by = "orig.ident", pt.size = 0.1, 
+                   assay = "RNA", y.max = 1.5,
+                   same.y.lims = TRUE) + 
+    ggtitle(paste0(name_obj, " - S.Score"))
+  
+  plot.g2 = VlnPlot(object = obj, features = "G2M.Score", 
+                    group.by = "orig.ident", pt.size = 0.1,
+                    assay = "RNA", y.max = 1.5,
+                    same.y.lims = TRUE) + 
+    ggtitle(paste0(name_obj, " - G2M.Score"))
+  
+  ggsave(plot = plot.s|plot.g2, 
+         filename =  paste0(dir_output, "plot_cellcycle_vln_", name_obj, ".png"), 
+         height = 6, width = 18)
+  
+  print(plot.s|plot.g2)
+}
+
+```
+On a des cellules dans différentes phases du cycle cellulaire mais environ en mêmes proportions entre les conditions. 
+
+## Répartition des cellules sur la base de leur score de cycle cellulaire
+```{r results = 'hold', fig.width=20, fig.height=6, fig.fullwidth=TRUE}
+
+list_obj = lapply(list_obj, function(x) { RunPCA(object = x, 
+                                                 assay = "RNA",
+                                                 reduction.name = "pca.cellcycle",
+                                                 npcs = 50,
+                                                 features = c(cc.genes$s.genes, cc.genes$g2m.genes), 
+                                                 verbose = TRUE) })
+
+
+for (i in 1:length(list_obj)) {
+  
+  obj = list_obj[[i]]
+  name_obj = names(list_obj)[i]
+
+  cc_cond_pca = DimPlot(object = obj, 
+                        reduction = "pca.cellcycle",
+                        group.by = "Phase",
+                        split.by = "orig.ident") + ggtitle(name_obj)
+  
+  ggsave(plot = cc_cond_pca, 
+         filename =  paste0(dir_output, "plot_cellcycle_pca_", name_obj, ".png"), 
+         height = 6, width = 20)
+  
+  print(cc_cond_pca)
+  
+}
+
+```
+On voit une vraie différence de placement des cellules selon le cycle cellulaire.
+
+## Déterminer le nombre d'UMI impliqués dans les gènes du cycle cellulaire (travail sur l'objet avec tous les filtres)
+```{r, eval = FALSE}
+
+# La boucle étant très longue (1h pour faire tourner tous les fichiers), on la lance une seule fois 
+# puis on enregisre les tableaux pour pouvoir ensuite les recharger sans relancer la boucle si on en a besoin. 
+
+for (i in 1:length(list_obj)) {
+  
+  obj = list_obj[[i]]
+  name_obj = names(list_obj)[i]
+  print(name_obj)
+  
+  # Liste de matrices (gène/cellule/nbUMI) par condition
+  print("Splitting object per orig.dent and extract RNA counts")
+  list_cc = SplitObject(obj, "orig.ident")
+  list_cc = lapply(list_cc, function(x) { as.data.frame(x@assays$RNA@counts) })
+  
+  # Restriction des tableaux aux gènes du cycle cellulaire
+  print("Filter genes to keep only cell cycle genes")
+  list_cc = lapply(list_cc, function(x) { x %>% dplyr::filter(row.names(x) %in% c(cc.genes$s.genes, cc.genes$g2m.genes)) })
+  
+  # Extraction du nombre de cellules détectant chaque gène et des statistiques sur les UMI (total, moyenne, médiane, variance)
+  print("Calculate tab statistics")
+  list_cc = lapply(list_cc, function(x) {
+    print("Calculate temp_nbcells tab")
+    temp_nbcells = x
+    ncol_temp_nbcells = ncol(temp_nbcells)
+    temp_nbcells[] = lapply(temp_nbcells, as.logical)
+    temp_nbcells = temp_nbcells %>% 
+      dplyr::mutate(nbcells = rowSums(.)) %>%
+      dplyr::mutate(percentcells = round((nbcells/ncol_temp_nbcells) *100)) %>%
+      tibble::rownames_to_column(var = "gene") %>%
+      dplyr::select(gene, nbcells, percentcells)
+    print("Calculate temp_umi tab")
+    temp_umi = x 
+    temp_umi = temp_umi %>%
+      dplyr::mutate(totalUMI = rowSums(.),
+                    medianUMI = rowMedians(as.matrix(temp_umi[,-totalUMI])),
+                    meanUMI = round(rowMeans(as.matrix(temp_umi[,c(-totalUMI, -medianUMI)])), 2),
+                    varUMI = round(rowVars(as.matrix(temp_umi[,c(-totalUMI, -medianUMI, -meanUMI)])), 2)) %>%
+      tibble::rownames_to_column(var = "gene") %>%
+      dplyr::mutate(phase = ifelse(gene %in% cc.genes$s.genes, "S", "G2M")) %>% 
+      dplyr::select(gene, phase, totalUMI, meanUMI, medianUMI, varUMI)
+    x = full_join(temp_nbcells, temp_umi, by = "gene")
+    return(x)
+  })
+
+  # Groupement des tableaux des conditions dans un tableau général
+  tab_cc = dplyr::bind_rows(list_cc, .id = "condition")
+  # Enregistrement du tableau
+  write.csv2(tab_cc, file = paste0(dir_output, "tab_cc_", name_obj, ".csv"), row.names = FALSE)
+
+}
+
+```
+
+```{r, results = 'hold', fig.width=20, fig.height=8, fig.fullwidth=TRUE}
+
+# Chargement des tableaux issus de la boucle 
+my.path <- list(paste0(dir_output, "tab_cc_data_allcond.csv"), 
+                paste0(dir_output, "tab_cc_data_allcond_filter_nbG.csv"),
+                paste0(dir_output, "tab_cc_data_allcond_filter_nbG_pMT.csv"),
+                paste0(dir_output, "tab_cc_data_allcond_filter_nbG_pMT_pRB.csv"),
+                paste0(dir_output, "tab_cc_data_allcond_filter_nbG_pMT_pRB_rmMT.csv"))
+
+list_tab_cc  <- lapply(my.path, function(x) { read.csv2(file = x, quote=FALSE, sep = ";") })
+names(list_tab_cc) = c("data_allcond", "data_allcond_filter_nbG", "data_allcond_filter_nbG_pMT", "data_allcond_filter_nbG_pMT_pRB", "data_allcond_filter_nbG_pMT_pRB_rmMT")
+
+for (i in 1:length(list_tab_cc)) {
+  
+  obj = list_tab_cc[[i]]
+  name_obj = names(list_tab_cc)[i]
+
+  # Affichage du tableau 
+  obj %>%
+      kable(caption = name_obj) %>%
+      kable_styling() %>%
+      scroll_box(height = "400px", width = "100%")
+
+  # Création de graphiques à partir du tableau
+  tab_sgene = tab1 %>% filter(data_allcond.phase == "S")
+  plot_smedian = ggplot(tab_sgene, aes(x=data_allcond.gene, y = data_allcond.medianUMI, fill = data_allcond.variable)) +
+    geom_col(position = "dodge") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+    ggtitle("Phase S genes - Median UMI")
+  plot_smean = ggplot(tab_sgene, aes(x=data_allcond.gene, y = data_allcond.meanUMI, fill = data_allcond.variable)) +
+    geom_col(position = "dodge") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+    ggtitle("Phase S genes - Mean UMI")
+  
+  tab_g2gene = tab1 %>% filter(data_allcond.phase == "G2M")
+  plot_g2median = ggplot(tab_g2gene, aes(x=data_allcond.gene, y = data_allcond.medianUMI, fill = data_allcond.variable)) +
+    geom_col(position = "dodge") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+    ggtitle("Phase G2M genes - Median UMI")
+  plot_g2mean = ggplot(tab_g2gene, aes(x=data_allcond.gene, y = data_allcond.meanUMI, fill = data_allcond.variable)) +
+    geom_col(position = "dodge") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+    ggtitle("Phase G2M genes - Mean UMI")
+
+  print(plot_smedian/plot_smean | plot_g2median/plot_g2mean)
+    
+  # Enregistrement des graphiques
+  ggsave(plot = (plot_smedian/plot_smean | plot_g2median/plot_g2mean), 
+          filename = paste0(dir_output, "plot_cellcycle_statUMI_", name_obj, ".png"),
+          height = 6, width = 20)
+}
+
+```
+
+Possibilité de régresser les données ou non => la régression se fait au niveau de la normalisation SCT. 
+
+```{r, enregistrement facultatif objet intermediaire partie2, eval = FALSE}
+
+lapply(seq_along(list_obj), function(x) {
+  name_obj = names(list_obj)[[x]]
+  saveRDS(object = list_obj[[x]], file = paste0(dir_output, name_obj, "_part2_normalized.rds")) 
+})
+
+```
+
+<!--*************************************************************************-->
+<br><br><br>
+<!--*************************************************************************-->
+
+
+```{r, eval = FALSE}
+list_obj = c("data_allcond" = readRDS(paste0(dir_output, "data_allcond_part2_normalized.rds")), 
+             "data_allcond_filter_nbG" = readRDS(paste0(dir_output, "data_allcond_filter_nbG_part2_normalized.rds")),
+             "data_allcond_filter_nbG_pMT" = readRDS(paste0(dir_output, "data_allcond_filter_nbG_pMT_part2_normalized.rds")),
+             "data_allcond_filter_nbG_pMT_pRB" = readRDS(paste0(dir_output, "data_allcond_filter_nbG_pMT_pRB_part2_normalized.rds")),
+             "data_allcond_filter_nbG_pMT_pRB_rmMT" = readRDS(paste0(dir_output, "data_allcond_filter_nbG_pMT_pRB_rmMT_part2_normalized.rds")))
+```
+
+
+# .Normalisation avec SCTransform
+
+La fonction SCTransform regroupe en une seule ligne des filtres sur les données, une normalisation, l'extraction des 3000 gènes les plus variables et le scaling. 
+```{r}
+
+if (regress_cc == TRUE) { 
+  
+  list_obj = lapply(list_obj, function(x) { SCTransform(object = x, 
+                                          assay = "RNA", 
+                                          new.assay.name = "SCT", 
+                                          method = "glmGamPoi", 
+                                          do.center = TRUE, 
+                                          do.scale = FALSE,
+                                          variable.features.n = 3000,
+                                          vars.to.regress = c("S.Score", "G2M.Score"),
+                                          min_cells = 1,
+                                          ncells = NULL) })
+} else {
+    
+    list_obj = lapply(list_obj, function(x) { SCTransform(object = x, 
+                                          assay = "RNA", 
+                                          new.assay.name = "SCT", 
+                                          method = "glmGamPoi", 
+                                          do.center = TRUE, 
+                                          do.scale = FALSE,
+                                          variable.features.n = 3000,
+                                          vars.to.regress = NULL,
+                                          min_cells = 1,
+                                          ncells = NULL) })
+  }
+
+```
+
+
+On utilise la méthode "glmGamPoi" dans la fonction SCTransform pour améliorer la vitesse de calcul. Les résultats de la normalisation sont ensuite stockés dans l'assay "SCT".  
+*Filtres appliqués*: Attention, les paramètres de filtre par défaut sont "cachés" dans la fonction SCTransform. 
+- Filter out cells which have less than this many genes expressed [200] => notre filtre est plus restrictif (1000 gènes) donc pas d'impact
+- Filter out cells which have higher unique gene count [2500] => pas trouvé comment l'enlever, c'est beaucoup plus restrictif que nos propres filtres
+- Filter out cells which have higher mitochondrial transcript percentage [5] 
+avec min_cells = 1, on enlève le filtre min_cells	that only use genes that have been detected in at least this many cells; default is 5
+On regarde donc les paramètres disponibles dans la fonction vst de base et on les rajoute dans SCTransform pour avoir la main sur les filtres appliqués. Comme on applique déjà des filtres sur nos données en pré processing, on va faire en sorte d'annuler les filtres par défaut.
+https://rdrr.io/cran/sctransform/man/vst.html
+*Normalisation* : Expression values are normalized using the SCTransform normalisation method, which uses Pearson residuals from “regularized negative binomial regression,” where cellular sequencing depth is utilized as a covariate in a generalized linear model (GLM). The parameters for the model are estimated by pooling information acreoss genes that are expressing at similar levels. This should remove the technical characteristics but preserve the biological heterogeneity, and avoid overfitting the model to the data.
+center residuals to have mean zero
+
+"Compared to basic Seurat normalisation + scaling + variable gene finding, the SCTransform workflow performs more effective normalization, strongly removing technical effects from the data. This allows more PCs to be selected in the PCA step, as the higher PCs are more likely to represent subtle, but biologically relevant, sources of heterogeneity instead of variation in sequencing depth."
+
+```{r, enregistrement facultatif objet intermediaire partie3, eval = FALSE}
+
+lapply(seq_along(list_obj), function(x) {
+  name_obj = names(list_obj)[[x]]
+  saveRDS(object = list_obj[[x]], file = paste0(dir_output, name_obj, "_normalized.rds")) 
+})
+
+```

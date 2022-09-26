@@ -1,0 +1,196 @@
+---
+title: "scRNAseq_CITEseq_CreateSeuratObject"
+author: "Laëtitia Racine"
+date: "06/12/2021"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "show"
+    toc: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, Dependencies, message=F, warning=F}
+
+library(Seurat)
+library(dplyr)
+library(tidyr)
+library(kableExtra)
+library(ggplot2)
+
+```
+
+# Objectif du code 
+
+Ce code **permet de** :  
+- créer les matrices de count à partir des fichiers issus de CellRanger  
+- mettre les matrices de count au format Seurat Object pour chaque condition   
+- enregistrer les objets Seurat individuel  
+
+Il s'est **inspiré** de :   
+- https://satijalab.org/seurat/articles/multimodal_vignette.html  
+- https://satijalab.org/seurat/articles/pbmc3k_tutorial.html   
+- https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html   
+  
+On obtient **en sortie** un objet Seurat par condition. Un objet Seurat sert de conteneurs qui regroupe à la fois les données (comme les matrices de counts) mais aussi les analyses (comme les PCA ou clustering) d'un même *single-cell dataset*. Il contient plusieurs *Assays* selon le type de données : ARN, Protéine (ADT), Normalisation... On retrouve la matrice de *counts* pour chaque assay indiquant les features (= gènes de la base de données GRCh38) en ligne et les cellules identifiées par leur barcode en colonnes. Les commandes principales pour manipuler un objet Seurat sont indiquées dans la vignette : https://satijalab.org/seurat/articles/essential_commands.html.
+
+
+```{r, Working directories and external script}
+
+directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory_exp = paste0(directory, "exp/")
+directory_data = paste0(directory, "data/scRNAseq/")
+directory_bin = paste0(directory, "bin/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_CreateSeuratObject/"))
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_CreateSeuratObject/", current_date))
+directory_output = paste0(directory_exp, "scRNAseq_CITEseq_CreateSeuratObject/", current_date, "/")
+
+# Load external script with functions and constantes 
+source(file = paste0(directory_bin, "functions_constantes.R"))
+list_antibody = c("CD34.1","CD133")
+
+```
+
+```{r, Input loading}
+
+# List of files available in data folder : CellRanger output files from folder sample_feature_bc_matrix.
+matrix_list = list.files(path = directory_data, pattern = "mtx")
+barcodes_list = list.files(path = directory_data, pattern = "barcodes")
+features_list = list.files(path = directory_data, pattern = "features")
+
+# Extract number and names of conditions
+if (length(matrix_list) == length(barcodes_list) & length(barcodes_list) == length(features_list)) {
+  number_condition = length(matrix_list)
+} else { print("Files missing, check data folder") }
+list_condition = str_extract(string = matrix_list, pattern = "scRNAseq_[:alnum:]+(?=_sample_feature_bc_matrix_matrix.mtx.gz)")
+
+```
+
+On travaille ici à partir du dossier envoyé par la plateforme de Cochin, contenant les fichiers traités via CellRanger. Pour chaque échantillon, on dispose d'un dossier contenant les informations nécessaires à la création des matrices de *count*. Elles sont stockées dans : [nom échantillon]/outs/per_sample_outs/sample[1ou2]/count. 
+Pour que le gène (assay = RNA) puisse être différencié facilement de la protéine (assay = ADT) pour le CD34, la détection de la protéine est indiquée sous le nom CD34.1. Pour le CD133, on n'a pas ce problème car le gène associé au CD133 porte un autre nom : PROM1. 
+
+**Création des objets Seurat individuels**
+```{r, Create Individual Seurat Object function definition}
+
+
+matrix, feature, barcode
+
+create_seurat_ADT_RNA = function(dir, list_antibody, name_project) {
+  
+  # # Liste des cellules détectées (deux tableaux avec la même info : idem sample_barcodes.csv)
+  # cells = read.csv(paste0(dir, "barcodes.tsv.gz"), 
+  #                  header = FALSE, col.names = "barcode")
+  
+  # Liste des features : gènes ou anticorps CITEseq ou Hashtag
+  features = read.csv(paste0(dir, "features.tsv.gz"), 
+                      sep = "\t", header = FALSE, col.names = c("id_gene", "name", "analysis"))
+  # features_antibody = features %>% dplyr::filter(analysis == "Antibody Capture")
+  features_gene = features %>% dplyr::filter(analysis == "Gene Expression")
+  list_gene = features_gene$name
+  
+  # Association gène/transcrit et antibody/transcript
+  matrix = as.sparse(ReadMtx(mtx = paste0(dir, "matrix.mtx.gz"),
+                             cells = paste0(dir, "barcodes.tsv.gz"), # liste des cellules détectées
+                             features = paste0(dir, "features.tsv.gz"))) # liste des gènes ou anticorps CITEseq ou Hashtag
+  
+  # Séparation des matrices
+  tab_matrix = as.data.frame(matrix)
+  tab_antibody = tab_matrix %>% dplyr::filter(row.names(tab_matrix) %in% list_antibody)
+  tab_genes = tab_matrix %>% dplyr::filter(row.names(tab_matrix) %in% list_gene)
+  
+  # Création d'un Seurat Object
+  data = CreateSeuratObject(counts = tab_genes, 
+                            project = name_project)
+  # create a new assay to store ADT information
+  adt_assay = CreateAssayObject(counts = tab_antibody)
+  # Ajout du nouvel assay dans data
+  data[["ADT"]] = adt_assay
+  
+  return(data)
+}
+
+```
+
+```{r, Create Individual Seurat Object call function}
+# data_CTRL = Seurat_ADT_RNA(dir_CTRL, list_antibody, "CTRL")
+# data_DON = Seurat_ADT_RNA(dir_DON, list_antibody, "DON")
+# data_2DG = Seurat_ADT_RNA(dir_2DG, list_antibody, "2DG")
+# data_CTRLaK = Seurat_ADT_RNA(dir_CTRLaK, list_antibody, "CTRLaK")
+# data_DONaK = Seurat_ADT_RNA(dir_DONaK, list_antibody, "DONaK")
+# data_2DGaK = Seurat_ADT_RNA(dir_2DGaK, list_antibody, "2DGaK")
+# data_VPA = Seurat_ADT_RNA(dir_VPA, list_antibody, "VPA")
+# data_AOA =
+# data_AOAaK =
+# data_CTRL2 =
+
+  # Call function to create objects and store in a list
+list_seurat_obj = list()
+
+for (i in 1:number_condition) {
+
+  list_seurat_obj[list_condition[i]] = create_seurat_obj(
+    matrix = paste0(directory_data, str_subset(string = matrix_list, pattern = list_condition[i])),
+    barcodes = paste0(directory_data, str_subset(string = barcodes_list, pattern = list_condition[i])),
+    features = paste0(directory_data, str_subset(string = features_list, pattern = list_condition[i]))
+  )
+
+  print(paste(list_condition[i], "seurat obj created"))
+
+}
+
+```
+
+```{r, Create Individual Seurat Object check outputs}
+
+for (i in 1:number_condition) {
+  # Vérifier qu'il y a bien deux assays dans chaque objet
+  print(paste(Assays(list_seurat_obj[i])))
+  # Extraire la liste des anticorps CITEseq pour chaque objet
+  print(rownames(list_seurat_obj[i][["ADT"]]))
+}
+
+# Assays(data_CTRL) 
+# Assays(data_CTRLaK)
+# Assays(data_DON)
+# Assays(data_DONaK)
+# Assays(data_2DG)
+# Assays(data_2DGaK)
+# Assays(data_VPA)
+# # Extraire la liste des anticorps CITEseq pour chaque objet
+# rownames(data_CTRL[["ADT"]])
+# rownames(data_CTRLaK[["ADT"]])
+# rownames(data_DON[["ADT"]])
+# rownames(data_DONaK[["ADT"]])
+# rownames(data_2DG[["ADT"]])
+# rownames(data_2DGaK[["ADT"]])
+# rownames(data_VPA[["ADT"]])
+
+```
+  
+**Enregistrement des objets individuels sous forme de liste**
+```{r, Save outputs}
+
+saveRDS(list_seurat_obj, file = paste0(directory_output, "list_seurat_obj.rds"))
+
+```
+
+```{r, Rsession}
+
+# Clean working space and show package version
+rm(list = ls())
+sessionInfo()
+
+```
+

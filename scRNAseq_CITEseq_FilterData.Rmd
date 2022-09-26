@@ -1,0 +1,310 @@
+---
+title: "Filter_Data"
+author: "Laëtitia"
+date: "06/12/2021"
+output: 
+  html_document :
+      theme : journal
+      highlight : default
+      toc : yes 
+      toc_depth : 4
+      number_sections : no
+      code_folding : show
+editor_options: 
+  chunk_output_type: inline
+---
+<style>
+body {text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(collapse = TRUE)
+# à mettre en commentaire quand on veut lancer tous les chunks
+# lignes permettant de faire le knitr sans recréer tous les objets
+knitr::opts_chunk$set(eval = FALSE)
+```
+
+```{r libraries, eval=TRUE, message=FALSE}
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+```
+
+```{r manual_dir, eval=TRUE}
+
+# Output directories
+dir = "/home/rparmentier/Documents/Git_10XRNAseqCITEseq_Metabo/"
+currentDate <- paste0(substr(Sys.Date(), 1,4), substr(Sys.Date(),6,7), substr(Sys.Date(),9, 10))
+# currentDate = "20211213"
+dir.create(path = paste0(dir, "exp/", currentDate))
+dir_output = paste0(dir, "exp/", currentDate, "/Filter_Data/")
+dir.create(path = dir_output)
+
+# Input directories
+dir_input = paste0(dir, "exp/", currentDate, "/Create_SeuratObject/")
+
+```
+
+```{r include=FALSE, eval=TRUE}
+# à mettre en commentaire quand on veut lancer tous les chunks
+# lignes permettant de faire le knitr sans recréer tous les objets
+stat_tab = read.csv2(paste0(dir_output, "stat_tab_filter.csv"))
+```
+
+<!--*************************************************************************-->
+<br><br><br>
+<!--*************************************************************************-->
+
+# Objectif du code 
+
+Ce code **permet de** :    
+- filtrer les cellules sur la base du nombre de gènes détectés  
+- filtrer les cellules sr la base de leur pourcentage d'ARN mitochondrial  
+- filtrer les cellules sur la base de leur pourcentage d'ARN ribosomal  
+- filtrer les gènes pour enlever les gènes mitochondriaux   
+- créer un tableau récapitulatif indiquant le nombre de cellules et gènes écartés par chaque filtre  
+
+Il est **inspiré** de :   
+- https://satijalab.org/seurat/articles/pbmc3k_tutorial.html   
+- https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html   
+  
+On obtient **en sortie** un objet Seurat après chaque filtre (sachant que les filtres sont cumulatifs, si on veut appliquer un seul filtre, il faut le faire à la main et enregistrer) ainsi qu'un tableau récapitulatif de l'effet des filtres.
+
+
+<!--*************************************************************************-->
+<br><br><br>
+<!--*************************************************************************-->
+
+
+# Application de filtres Qualité CUMULATIFS sur les données 
+
+  
+**Chargement de l'objet Seurat à filtrer**
+```{r, load_obj, eval=TRUE}
+obj = readRDS(paste0(dir_input, "data_allcond.rds"))
+```
+  
+  
+**Création d'un tableau récapitulatif avant/après filtre**
+```{r, tabrecap}
+
+# Fonctions pour obtenir le nombre de gènes pour une matrice et ranger dans un tableau avec toutes les conditions
+extract_nbgene_sample = function(seurat_obj, condition) {
+  obj <- subset(x = seurat_obj, subset = orig.ident == condition)
+  matrix = as.data.frame(obj@assays$RNA@counts)
+  sum_UMI = as.data.frame(rowSums(matrix))
+  expressed_genes = sum_UMI %>% dplyr::filter(`rowSums(matrix)` != 0)
+  return(nrow(expressed_genes))
+}
+
+tab_genes_create = function(obj, name_filter) {
+  tab_genes = data.frame(condition = c("2DG", "2DGaK", "CTRL", "CTRLaK", "DON", "DONaK", "VPA"),
+                         category = rep("genes", 7),
+                         dynamic = c(extract_nbgene_sample(obj, "2DG"), 
+                                           extract_nbgene_sample(obj,"2DGaK"), 
+                                           extract_nbgene_sample(obj,"CTRL"),
+                                           extract_nbgene_sample(obj,"CTRLaK"), 
+                                           extract_nbgene_sample(obj,"DON"),
+                                           extract_nbgene_sample(obj,"DONaK"),
+                                           extract_nbgene_sample(obj,"VPA")))
+  tab_genes = tab_genes %>% dplyr::rename(!!name_filter := "dynamic")
+  return(tab_genes)
+}
+
+# Création des tableaux récapitulatifs gènes et cellules
+tab_genes = tab_genes_create(obj = obj, name_filter = "no_filter")
+
+tab_cell = as.data.frame(table(obj@meta.data$orig.ident)) %>% 
+  dplyr::rename(condition = "Var1", no_filter = "Freq") %>% 
+  dplyr::mutate(category = "cells", .after = "condition")
+
+# Fusion des deux tableaux
+stat_tab = full_join(tab_genes, tab_cell, by = c("condition", "category", "no_filter"))
+
+```
+  
+
+## Filtre_nbG : les cellules conservées ont **entre 1000 et 6500 gènes détectés**
+
+Les cellules dans lesquelles il y a très peu de gènes détectés peuvent correpondre à des biais de technique. On décide donc d'appliquer un filtre sur le nombre minimum de gènes détectés pour être considéré comme une vraie cellule de bonne qualité. De la même façon, les cellules qui semblent avoir beaucoup plus de gènes détectés par rapport aux autres cellules de l'expérience peuvent correspondre à des doublets. On applique donc deux seuils pour garder les cellules les plus qualitatives. Pour savoir où les placer, on observe de plus près le nombre de gènes détectés par cellules en fonction des conditions.
+
+```{r, message=FALSE, results='hold', fig.width=8, fig.height=6, eval=TRUE}
+
+plot_feature = VlnPlot(obj, features = "nFeature_RNA") + 
+  geom_hline(aes(yintercept = 6500), color = "red", size = 1) +
+  geom_hline(aes(yintercept = 1000), color = "red", size = 1) +
+  ylim(0,8000) +
+  theme(axis.title.x = element_blank())
+
+plot_feature
+```
+
+```{r}
+ggsave(plot = plot_feature, filename = paste0(dir_output, "plot_feature_filter.png"), width = 8, height = 6)
+```
+
+En se basant sur ce graphique, on peut établir des seuils "à l'oeil". On décide ainsi d'enlever toutes les cellules avec moins de *1000 gènes et toutes celles avec plus de 6500 gènes*. La médiane des gènes détectés par cellule se situant entre 2731 et 3880 selon les conditions, les limites appliquées semblent cohérentes. On peut se permettre d'être restrictif à ce niveau car on ne cherche pas de population rare. => **filtre_nbG**
+
+```{r filter_nbG, eval=TRUE}
+obj = subset(obj, subset = 1000 < nFeature_RNA & nFeature_RNA < 6500)
+obj[["filter_nbG"]] = "1000<nFeatures>6500"
+```
+
+```{r filter_nbG_tab-recap}
+
+tab_cell = as.data.frame(table(obj@meta.data$orig.ident)) %>% 
+  dplyr::rename(condition = "Var1", filter_nbG_keep = "Freq") %>% 
+  dplyr::mutate(category = "cells", .after = "condition")
+
+tab_genes = tab_genes_create(obj = obj, name_filter = "filter_nbG_keep")
+
+tab = full_join(tab_genes, tab_cell, by = c("condition", "category", "filter_nbG_keep"))
+stat_tab = full_join(stat_tab, tab, by = c("condition", "category"))
+
+```
+
+```{r filter_nbG_save}
+saveRDS(obj, file = paste0(dir_output, "data_allcond_filter_nbG.rds"))
+```
+
+## Filtre_pMT et Filtre_pRB : les cellules conservées ont **moins de 25% d'ARN mitochondrial** et **plus de 5% d'ARN ribosomal**
+
+```{r, message=FALSE, fig.width=24, fig.height=6, fig.fullwidth=TRUE, eval=TRUE}
+
+p1 = VlnPlot(obj, features = "percent.mt", group.by = "orig.ident") + 
+  geom_hline(aes(yintercept = 25), color = "red", size = 1) +
+  ylim(0,100)  +
+  theme(axis.title.x = element_blank())
+
+p2 = VlnPlot(obj, features = "percent.ribo", group.by = "orig.ident") + 
+  geom_hline(aes(yintercept = 5), color = "red", size = 1) +
+  ylim(0,100) +
+  theme(axis.title.x = element_blank())
+
+p3 = FeatureScatter(obj, feature1 = "percent.mt", feature2 = "percent.ribo", group.by = "orig.ident") + 
+  ylim(0,100) +
+  annotate("rect", xmin = 0, xmax = 25, ymin = 5, ymax = 60, alpha = 0.1, color = "red")
+
+(p1 | p2 | p3) 
+
+```
+
+```{r}
+ggsave(plot = p1 | p2 | p3, filename = paste0(dir_output, "plot_percentMTRB_filter.png"), width = 24, height = 6)
+```
+
+Les cellules présentant un fort pourcentage d'ARN mitochondrial et un faible pourcentage d'ARN ribosomal sont certainement mortes ou en train de mourir. On remarque en effet deux groupes de cellules lorsqu'on trace le scatter plot percent.ribo vs percent.mt : un groupe de cellules à gauche avec un faible pourcentage d'ARN mitochondrial et un pourcentage d'ARN ribosomal allant d'environ 10 à plus de 50% correspondant aux cellules vivantes, et un groupe de cellules à droite avec un fort pourcentage d'ARN mitochondrial et un faible pourcentage d'ARN ribosomal. Pour enlever le maximum de cellules mortes tout en gardant suffisamment d'informations, on applique des filtres sur ces deux paramètres : on conserve ainsi les cellules avec **moins de 25% d'ARN mitochondrial** (**Filtre_pMT**) et avec **plus de 5% d'ARN ribosomal** (**Filtre_pRB**).
+
+```{r filter_pMT, eval=TRUE}
+obj = subset(obj, subset = percent.mt < 25)
+obj[["filter_pMT"]] = "< 25% MT" 
+```
+
+```{r, filter_pMT_tab-recap}
+
+tab_cell = as.data.frame(table(obj@meta.data$orig.ident)) %>% 
+  dplyr::rename(condition = "Var1", filter_pMT_keep = "Freq") %>% 
+  dplyr::mutate(category = "cells", .after = "condition")
+
+tab_genes = tab_genes_create(obj = obj, name_filter = "filter_pMT_keep")
+
+tab = full_join(tab_genes, tab_cell, by = c("condition", "category", "filter_pMT_keep"))
+stat_tab = full_join(stat_tab, tab, by = c("condition", "category"))
+
+```
+
+```{r filter_pMT_save}
+saveRDS(obj, file = paste0(dir_output, "data_allcond_filter_nbG_pMT.rds"))
+```
+
+```{r filter_pRB, eval=TRUE}
+obj = subset(obj, subset = percent.ribo > 5)
+obj[["filter_pRB"]] = "> 5% RB" 
+```
+
+```{r, filter_pRB_tab-recap}
+
+tab_cell = as.data.frame(table(obj@meta.data$orig.ident)) %>% 
+  dplyr::rename(condition = "Var1", filter_pRB_keep = "Freq") %>% 
+  dplyr::mutate(category = "cells", .after = "condition")
+
+tab_genes = tab_genes_create(obj = obj, name_filter = "filter_pRB_keep")
+
+tab = full_join(tab_genes, tab_cell, by = c("condition", "category", "filter_pRB_keep"))
+stat_tab = full_join(stat_tab, tab, by = c("condition", "category"))
+
+```
+
+```{r filter_pRB_save}
+saveRDS(obj, file = paste0(dir_output, "data_allcond_filter_nbG_pMT_pRB.rds"))
+```
+
+## Filtre_rmMT : les gènes **mitochondriaux** sont retirés de l'analyse
+
+Pour éviter que les cellules ne clusterisent sur la base de leurs gènes mitochondriaux, on décide de les retirer de l'analyse. => **Filtre_rmMT**  
+
+```{r filter_rmMT, eval=TRUE}
+
+# Extraction des noms des features pour ADT
+DefaultAssay(obj) = "ADT"
+feature_adt_list = rownames(obj)
+# Extraction de tous les noms des gènes pour RNA et aussi distinction pour les gènes mitochondriaux
+DefaultAssay(obj) = "RNA"
+mito_genes = rownames(obj)[grep("^MT-", rownames(obj))]
+feature_rna_list = rownames(obj)
+# Groupement des listes et on conserve seulement les features qui ne matchent pas avec la liste des gènes mitochondriaux
+feature_list = c(feature_adt_list, feature_rna_list)
+features_keep = setdiff(feature_list, mito_genes) # The elements of setdiff(x,y) are those elements in x but not in y.
+obj = subset(obj, features = features_keep)
+obj[["filter_rmMT"]] = "rm MTgenes"
+
+```
+
+```{r, filter_rmMT_tab-recap}
+
+tab_cell = as.data.frame(table(obj@meta.data$orig.ident)) %>% 
+  dplyr::rename(condition = "Var1", filter_rmMT_keep = "Freq") %>% 
+  dplyr::mutate(category = "cells", .after = "condition")
+
+tab_genes = tab_genes_create(obj = obj, name_filter = "filter_rmMT_keep")
+
+tab = full_join(tab_genes, tab_cell, by = c("condition", "category", "filter_rmMT_keep"))
+stat_tab = full_join(stat_tab, tab, by = c("condition", "category"))
+
+```
+
+```{r filter_rmMT_save}
+saveRDS(obj, file = paste0(dir_output, "data_allcond_filter_nbG_pMT_pRB_rmMT.rds"))
+```
+
+# Récapitulatif des filtres appliqués
+
+```{r save_stat-tab}
+
+stat_tab = stat_tab %>% 
+  dplyr::mutate(filter_nbG_remove = no_filter - filter_nbG_keep) %>% 
+  dplyr::mutate(filter_pMT_remove = filter_nbG_keep - filter_pMT_keep) %>% 
+  dplyr::mutate(filter_pRB_remove = filter_pMT_keep - filter_pRB_keep) %>% 
+  dplyr::mutate(filter_rmMT_remove = filter_pRB_keep - filter_rmMT_keep)
+
+write.csv2(stat_tab, file = paste0(dir_output, "stat_tab_filter.csv"))
+
+```
+
+```{r, eval=TRUE}
+stat_tab %>%
+  kable() %>%
+  kable_styling()
+```
+
+D'autres filtres pourraient être appliqués sur le jeu de données (ex : écarter des gènes qui monopolisent les reads...).  
+Avant d'aller plus loin de ce côté, on continue l'analyse des données pour voir ce qu'il est pertinent d'appliquer ou non. 
+  
+  
+```{r, include=FALSE, eval=TRUE}
+rm(p1, p2, p3, tab, tab_cell, tab_genes, stat_tab, plot_feature)
+rm(dir_output, dir_input, currentDate, feature_adt_list, feature_rna_list, feature_list, mito_genes, features_keep)
+```
+

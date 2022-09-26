@@ -1,0 +1,142 @@
+---
+title: "AnnotationsFiles_createGrange"
+author: "Laëtitia"
+date: "31/08/2022"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "show"
+    toc: true
+    theme: journal
+---
+
+```{r, Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This script aims to create annotations grange for hg19 and hg38 genome to be used for downstream analysis.  
+https://bioconductor.statistik.tu-dortmund.de/packages/3.8/bioc/vignettes/annotatr/inst/doc/annotatr-vignette.html#annotationhub-annotations
+
+```{r, Dependencies, message=F, warning=F}
+
+library(annotatr)
+library(dplyr)
+library(stringr)
+
+```
+
+```{r, Working directories}
+
+directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory_exp = paste0(directory, "exp/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"AnnotationsFiles_createGrange/"))
+dir.create(path = paste0(directory_exp,"AnnotationsFiles_createGrange/", current_date))
+directory_output = paste0(directory_exp, "AnnotationsFiles_createGrange/", current_date, "/")
+
+```
+
+# Select interesting annotations 
+
+```{r, Select annotations}
+
+# Show all available annotations
+print(builtin_annotations())
+
+# Show only hg19 and hg38 annotations
+print(str_subset(string = builtin_annotations(), pattern = "hg19"))
+print(str_subset(string = builtin_annotations(), pattern = "hg38"))
+
+# List of selected annotations for each genome
+hg19_annot = c(
+  "hg19_genes_1to5kb",
+  "hg19_genes_cds",
+  "hg19_genes_exons",
+  "hg19_genes_introns",
+  "hg19_genes_intergenic",
+  "hg19_genes_promoters",
+  "hg19_genes_5UTRs",
+  "hg19_cpg_islands",
+  "hg19_enhancers_fantom",
+  "hg19_genes_3UTRs"
+)
+
+hg38_annot = c(
+  "hg38_genes_1to5kb",
+  "hg38_genes_cds",
+  "hg38_genes_exons",
+  "hg38_genes_introns",
+  "hg38_genes_intergenic",
+  "hg38_genes_promoters",
+  "hg38_genes_5UTRs",
+  "hg38_cpg_islands",
+  "hg38_enhancers_fantom",
+  "hg38_genes_3UTRs"
+)
+  
+```
+
+# Create annotations grange
+
+```{r, Create annotations gr, message=F, warning=F}
+
+# Build the grange with annotations information
+hg19_annots_gr = build_annotations(genome = 'hg19', annotations = hg19_annot)
+hg38_annots_gr = build_annotations(genome = 'hg38', annotations = hg38_annot)
+
+# Visualize created granges
+hg19_annots_gr
+hg38_annots_gr
+
+# See chromosome list
+levels(hg19_annots_gr@seqnames)
+levels(hg38_annots_gr@seqnames)
+
+# See annotations repartition
+table(hg19_annots_gr$type)
+table(hg38_annots_gr$type)
+
+```
+
+# Clean annotations grange
+
+```{r, Clean annotations gr, message=F, warning=F}
+
+# Keep only standard chromosomes names in grange object (1-22, X, Y, M)
+hg19_annots_gr = keepStandardChromosomes(hg19_annots_gr, pruning.mode = "coarse")
+hg38_annots_gr = keepStandardChromosomes(hg38_annots_gr, pruning.mode = "coarse")
+
+# Add metadata genome column
+mcols(hg19_annots_gr)$genome = "hg19"
+mcols(hg38_annots_gr)$genome = "hg38"
+
+# Show grange after cleaning
+hg19_annots_gr
+hg38_annots_gr
+
+# See chromosome list
+levels(hg19_annots_gr@seqnames)
+levels(hg38_annots_gr@seqnames)
+
+# See annotations repartition
+table(hg19_annots_gr$type)
+table(hg38_annots_gr$type)
+
+```
+
+```{r, Save objects}
+
+saveRDS(object = hg19_annots_gr, file = paste0(directory_output, "hg19_annotations_gr.rds"))
+saveRDS(object = hg38_annots_gr, file = paste0(directory_output, "hg38_annotations_gr.rds"))
+
+```
+
+```{r, Rsession}
+
+# Clean working space and show packages version
+rm(list = ls())
+sessionInfo()
+
+```
