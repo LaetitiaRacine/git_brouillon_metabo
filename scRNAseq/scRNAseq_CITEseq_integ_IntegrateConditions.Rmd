@@ -1,0 +1,158 @@
+---
+title: "scRNAseq_CITEseq_IntegrateConditions"
+author: "Laëtitia Racine"
+date: "2022-09-26"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "show"
+    toc: false
+    theme: journal
+---
+
+
+```{r, Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, Dependencies, message=F, warning=F}
+
+library(Seurat)
+library(SeuratData)
+library(dplyr)
+
+# devtools::install_github('satijalab/seurat-data')
+
+```
+
+# Objectif du code 
+
+Ce code **permet de** :  
+- fusionner les objets Seurat pour obtenir un seul objet contenant tout le dataset  
+- enregistrer l'objet Seurat global  
+
+Il s'est **inspiré** de :   
+- https://github.com/satijalab/seurat/issues/1787   
+- https://github.com/stuart-lab/signac/issues/197  
+- https://www.biostars.org/p/9516696/  
+- https://satijalab.org/seurat/articles/integration_introduction.html 
+- https://satijalab.org/seurat/reference/prepsctintegration
+
+
+```{r, Working directories and external script}
+
+directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory_exp = paste0(directory, "exp/")
+directory_data = paste0(directory, "data/scRNAseq/")
+directory_bin = paste0(directory, "bin/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_integ_IntegrateConditions/"))
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_integ_IntegrateConditions/", current_date))
+directory_output = paste0(directory_exp, "scRNAseq_CITEseq_integ_IntegrateConditions/", current_date, "/")
+
+# Load external script with functions and constantes 
+source(file = paste0(directory_bin, "functions_constantes.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory_exp, "scRNAseq_CITEseq_ind_NormalizeData/"))
+# Object with cc regression
+list_seurat_obj_cc = readRDS(paste0(dir, "/", "list_seurat_obj_qc_norm_ccr.rds"))
+# Object without cc regression
+list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_obj_qc_norm.rds"))
+
+number_conditions = length(list_seurat_obj)
+
+```
+Normalize and identify features for each dataset independently => already done
+
+```{r, Integration based on LogNormalization}
+
+integration_fun = function(list_obj, number_conditions) {
+
+  # choose RNA assay as default assay for each object
+  for (i in 1:number_conditions) {DefaultAssay(list_obj[[i]]) = "RNA"}
+  # select features that are repeatedly variable across datasets for integration
+  features = SelectIntegrationFeatures(object.list = list_obj,
+                                       nfeatures = 2000, 
+                                       assay = rep("RNA", number_conditions),
+                                       verbose = TRUE)
+  # identify anchors to integrate the datasets
+  anchors = FindIntegrationAnchors(object.list = list_obj,
+                                   assay = rep("RNA", number_conditions),
+                                   anchor.features = features,
+                                   normalization.method = "LogNormalize",
+                                   reduction = "cca",
+                                   verbose = TRUE)
+  # create an integrated data assay in the object
+  list_obj = IntegrateData(anchorset = anchors, 
+                           new.assay.name = "integrated.log",
+                           normalization.method = "LogNormalize",
+                           verbose = TRUE)
+  # return output
+  return(list_obj)
+  
+}
+
+list_seurat_obj_cc = integration_fun(list_seurat_obj_cc)
+list_seurat_obj = integration_fun(list_seurat_obj)
+
+```
+
+```{r, Integration based on SCTransform normalization}
+
+integration_sct_fun = function(list_obj) {
+  
+  # choose SCT assay as default assay for each object
+  for (i in 1:number_conditions) {DefaultAssay(list_obj[[i]]) = "SCT"}
+  # select features that are repeatedly variable across datasets for integration
+  features = SelectIntegrationFeatures(object.list = list_obj,
+                                       nfeatures = 2000, 
+                                       assay = rep("SCT", number_conditions),
+                                       verbose = TRUE)
+  # prepare the object for integration
+  list_obj = PrepSCTIntegration(object.list = list_obj,
+                                assay = rep("SCT", number_conditions),
+                                anchor.features = features,
+                                verbose = TRUE)
+  
+  # identify anchors to integrate the datasets
+  anchors = FindIntegrationAnchors(object.list = list_obj,
+                                   assay = rep("SCT", number_conditions),
+                                   anchor.features = features,
+                                   normalization.method = "SCT",
+                                   reduction = "cca",
+                                   verbose = TRUE)
+  # create an integrated data assay in the object
+  list_obj = IntegrateData(anchorset = anchors, 
+                           new.assay.name = "integrated.sct",
+                           normalization.method = "SCT",
+                           verbose = TRUE)
+  # return output
+  return(list_obj)
+  
+}
+
+list_seurat_obj_cc = integration_sct_fun(list_seurat_obj_cc)
+list_seurat_obj = integration_sct_fun(list_seurat_obj)
+
+```
+
+```{r, Save outputs}
+
+saveRDS(list_seurat_obj_cc, paste0(directory_output, "integrate_seurat_obj_qc_norm_ccr.rds"))
+saveRDS(list_seurat_obj, paste0(directory_output, "integrate_seurat_obj_qc_norm.rds"))
+
+```
+
+```{r, Rsession}
+
+# Clean working space and show package version
+rm(list = ls())
+sessionInfo()
+
+```

@@ -1,0 +1,121 @@
+---
+title: "scATACseq_merge_GeneActivity.Rmd"
+author: "Laëtitia"
+date: "24/08/2022"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+---
+
+```{r, Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, Dependencies, warning=F, message=F}
+
+library(Seurat)
+library(Signac)
+
+```
+
+```{r, Working directories and external script}
+
+directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory_exp = paste0(directory, "exp/")
+directory_data = paste0(directory, "data/scATACseq/")
+directory_bin = paste0(directory, "bin/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"scATACseq_merge_GeneActivity/"))
+dir.create(path = paste0(directory_exp,"scATACseq_merge_GeneActivity/", current_date))
+directory_output = paste0(directory_exp, "scATACseq_merge_GeneActivity/", current_date, "/")
+
+# Load external script with functions and constantes 
+source(file = paste0(directory_bin, "functions_constantes.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory_exp, "scATACseq_merge_NormalizationReduction/"))
+seurat_obj = readRDS(paste0(dir, "/", "seurat_common_merged_qc_normalized_reduced.rds"))
+
+```
+
+```{r, Gene activity matrix}
+
+# Création de la gene activity matrix stockée dans une variable
+gene.activities <- GeneActivity(seurat_obj)
+
+# Visualisation des 5 premières lignes et colonnes de la gene activity matrix
+as.matrix(gene.activities[1:5, 1:5])
+
+# Ajout de la matrice dans l'objet seurat
+seurat_obj[['RNA']] <- CreateAssayObject(counts = gene.activities)
+
+# Normalisation des données
+seurat_obj <- NormalizeData(
+  object = seurat_obj,
+  assay = 'RNA',
+  normalization.method = 'LogNormalize',
+  scale.factor = median(seurat_obj$nCount_RNA)
+)
+
+```
+
+```{r, Gene activity plot, results = 'hold', fig.width=16, fig.height=12}
+
+
+DefaultAssay(seurat_obj) <- 'RNA'
+
+# Visulaiser l'expression de gènes particuliers
+list_genes = c('SMAD6', 'TAL1', 'HHEX', 'ZFPM1', 'FLI1', 'CBFA2T3', 'SPI1', 'ERG')
+plot = FeaturePlot(
+  object = seurat_obj,
+  features = list_genes,
+  pt.size = 0.1,
+  max.cutoff = 'q95',
+  ncol = 3,
+  cols = c('#1873CC','#1798E5','#00BFFF','#4AC596','#00CC00','#A2E700','#FFFF00','#FFD200','#FFA500')
+)
+plot
+
+
+# Visualiser l'expression des gènes les plus variables entre les cellules
+seurat_obj <- FindVariableFeatures(object = seurat_obj, assay = 'RNA', nfeatures = 100)
+
+plot_varfeature = FeaturePlot(
+  object = seurat_obj,
+  features = seurat_obj[['RNA']]@var.features[1:10],
+  pt.size = 0.1,
+  max.cutoff = 'q95',
+  ncol = 3
+)
+plot_varfeature
+
+```
+
+```{r, Save}
+
+ggsave(plot = plot_varfeature, 
+       filename = paste0(directory_exp, "plot_varfeature.png"), 
+       width = 18, height = 16)
+
+ggsave(plot = plot, 
+       filename = paste0(directory_exp,"plot_gene_list.png"), 
+       width = 18, height = 20)
+
+saveRDS(object = seurat_obj, file = paste0(directory_exp, "seurat_obj_annot_qc_normalize_geneact.rds"))
+
+```
+
+```{r, Rsession}
+
+rm(list = ls())
+sessionInfo()
+
+```
