@@ -24,8 +24,9 @@ library(Seurat)
 library(dplyr)
 library(ggplot2)
 library(kableExtra)
-library(gridExtra)
+library(gridExtra) # function grid.arrange()
 library(grid) # function textGrob()
+library(matrixStats) # function rowMedians()
 
 ```
 
@@ -34,13 +35,15 @@ Ce code **permet de** :
 - filtrer les cellules sr la base de leur pourcentage d'ARN mitochondrial    
 - filtrer les cellules sur la base de leur pourcentage d'ARN ribosomal    
 - filtrer les gènes pour enlever les gènes mitochondriaux     
-- créer un tableau récapitulatif indiquant le nombre de cellules et gènes écartés par chaque filtre    
+- créer un tableau récapitulatif indiquant le nombre de cellules et gènes écartés par chaque filtre
+- créer un tableau récapitulatif
+- visualiser l'effet des filtres sur une umap
   
 Il est **inspiré** de :     
 - https://satijalab.org/seurat/articles/pbmc3k_tutorial.html     
 - https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html     
     
-On obtient **en sortie** un objet Seurat après chaque filtre (sachant que les filtres sont cumulatifs, si on veut appliquer un seul filtre, il faut le faire à la main et enregistrer) ainsi qu'un tableau récapitulatif de l'effet des filtres.
+On obtient **en sortie** un objet Seurat après chaque filtre (sachant que les filtres sont cumulatifs, si on veut appliquer un seul filtre, il faut le faire à la main et enregistrer un objet intermédiaire) ainsi qu'un tableau récapitulatif de l'effet des filtres.
 
 ```{r, Working directories and external script}
 
@@ -63,12 +66,12 @@ source(file = paste0(directory_bin, "functions_constantes.R"))
 
 ```{r, Input loading and output initializing}
 
-# Load seurat objects
+# Load seurat objects (document initial sans filtre appliqué)
 dir = pic_last_dir(paste0(directory_exp, "scRNAseq_CITEseq_ind_CreateSeuratObject/"))
 list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_obj.rds"))
 number_conditions = length(list_seurat_obj)
 
-# Initialize empty list for output
+# Initialize empty list for output (list_seurat_obj sur lequel ont été appliqués les filtres en cumulatif)
 filtered_list_seurat_obj = list()
 
 # Initialize a list of list to store all versions of seurat object (different filter levels)
@@ -78,18 +81,50 @@ names(list_seurat_obj_filter) = names(list_seurat_obj)
 
 ```
 
-list_seurat_obj => document initial sans filtre appliqué
-list_seurat_obj_filter => objet dans lequel sont stockées tous les objets intermédiaires filtrés 
-filtered_seurat_obj => list_seurat_obj sur lequel ont été appliqués les filtres en cumulatif
-
 
 # Application de filtres Qualité CUMULATIFS sur les données 
 
 
+## Ajout de l'information du pourcentage mitochondrial et ribosomal
+
+```{r}
+
+ARN_percentage_fun = function(obj) {
+  
+  # Extraction de la liste des gènes mitochondriaux et ribosomaux
+  mito_genes = rownames(obj)[grep("^MT-", rownames(obj))]
+  ribo_genes <- rownames(obj)[grep("^RP[SL]", rownames(obj))]
+  cat("\n", "Mitochondrial genes", length(mito_genes), ":", mito_genes, "\n")
+  cat("Ribosomal genes", length(ribo_genes), ":", ribo_genes, "\n")
+
+  # Ajout du pourcentage dans l'objet seurat
+  obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")
+  obj[["percent.ribo"]] <- PercentageFeatureSet(obj, pattern = "^RP[SL]")
+
+  # Output 
+  return(obj)
+  
+}
+
+for (i in 1:number_conditions) {
+  
+  # Calculate percentage of mitochondrial and ribosomal RNA
+  filtered_list_seurat_obj[[i]] = ARN_percentage_fun(list_seurat_obj[[i]])
+  
+  # Save seurat object without filter in list_seurat_obj_filter
+  list_seurat_obj_filter[[i]]["seurat_obj"] = filtered_list_seurat_obj[[i]]
+  
+}
+  
+names(filtered_list_seurat_obj) = names(list_seurat_obj)
+
+```
+
 
 ## Filtre_nbG : les cellules conservées ont **entre 1000 et 6500 gènes détectés**
 
-Les cellules dans lesquelles il y a très peu de gènes détectés peuvent correpondre à des biais de technique. On décide donc d'appliquer un filtre sur le nombre minimum de gènes détectés pour être considéré comme une vraie cellule de bonne qualité. De la même façon, les cellules qui semblent avoir beaucoup plus de gènes détectés par rapport aux autres cellules de l'expérience peuvent correspondre à des doublets. On applique donc deux seuils pour garder les cellules les plus qualitatives. Pour savoir où les placer, on observe de plus près le nombre de gènes détectés par cellules en fonction des conditions.
+Les cellules dans lesquelles il y a très peu de gènes détectés peuvent correpondre à des biais de technique. On décide donc d'appliquer un filtre sur le nombre minimum de gènes détectés pour être considéré comme une vraie cellule de bonne qualité. De la même façon, les cellules qui semblent avoir beaucoup plus de gènes détectés par rapport aux autres cellules de l'expérience peuvent correspondre à des doublets. Il existe un pourcentage d'erreur d'encapsulation des cellules en fonction du nombre inséré dans la puce. Il est en effet possible que des deux cellules aient été emprisonnées dans le même GEM, leurs transcrits auront donc tous le même barcode et seront considérés comme appartenant à une seule cellules. Il convient ainsi de nettoyer le jeu de données en enlevant les possibles doublets présents. On peut utiliser des outils particulier avant de fusionner les fichiers (https://www.youtube.com/watch?v=NqvAS4HgmrE) mais on peut aussi se contenter d'appliquer un filtre sur le nombre de genes détectés dans les cellules (https://kb.10xgenomics.com/hc/en-us/articles/360001074271-Does-Cell-Ranger-automatically-exclude-doublets-). C'est ce qu'on va faire ici.  
+On applique donc deux seuils pour garder les cellules les plus qualitatives. Pour savoir où les placer, on observe de plus près le nombre de gènes détectés par cellules en fonction des conditions.
 
 ```{r, Number of genes detected per cell, message=F, results='hold', fig.width=16, fig.height=10}
 
@@ -99,7 +134,7 @@ plot_feature_graphs = list()
 # Loop to create features_RNA graphs and store them into the list
 for (i in 1:number_conditions) {
 
-  plot_feature = VlnPlot(list_seurat_obj[[i]], features = "nFeature_RNA") + 
+  plot_feature = VlnPlot(filtered_list_seurat_obj[[i]], features = "nFeature_RNA") + 
     geom_hline(aes(yintercept = 6500), color = "red", size = 1) +
     geom_hline(aes(yintercept = 1000), color = "red", size = 1) +
     stat_summary(fun = median, geom='point', size = 5 , colour = "white") +
@@ -128,10 +163,10 @@ En se basant sur ces graphiques, on peut établir des seuils "à l'oeil". On dé
 for (i in 1:number_conditions) {
   
   # Apply filter on cell depending on their genes number 
-  filtered_list_seurat_obj[[i]] = subset(list_seurat_obj[[i]], subset = 1000 < nFeature_RNA & nFeature_RNA < 6500)
+  filtered_list_seurat_obj[[i]] = subset(filtered_list_seurat_obj[[i]], subset = 1000 < nFeature_RNA & nFeature_RNA < 6500)
   filtered_list_seurat_obj[[i]][["filter_nbG"]] = "1000<nFeatures>6500"
   
-  # Save seurat object with nbG filter
+  # Save seurat object with nbG filter in list_seurat_obj_filter
   list_seurat_obj_filter[[i]]["seurat_obj_nbG"] = filtered_list_seurat_obj[[i]] 
   
 }
@@ -140,54 +175,43 @@ for (i in 1:number_conditions) {
 
 
 
-
 ## Filtre_pMT et Filtre_pRB : les cellules conservées ont **moins de 25% d'ARN mitochondrial** et **plus de 5% d'ARN ribosomal**
 
 ```{r, Percentages RNA, message=F, warning=F, fig.width=16, fig.height=20, fig.fullwidth=TRUE}
-
-ARN_percentage_fun = function(obj) {
-  
-  # Extraction de la liste des gènes mitochondriaux et ribosomaux
-  mito_genes = rownames(obj)[grep("^MT-", rownames(obj))]
-  ribo_genes <- rownames(obj)[grep("^RP[SL]", rownames(obj))]
-  cat("\n", "Mitochondrial genes", length(mito_genes), ":", mito_genes, "\n")
-  cat("Ribosomal genes", length(ribo_genes), ":", ribo_genes, "\n")
-
-  # Ajout du pourcentage dans l'objet seurat
-  obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")
-  obj[["percent.ribo"]] <- PercentageFeatureSet(obj, pattern = "^RP[SL]")
-
-  # Output 
-  return(obj)
-  
-}
 
 plot_percentage_graphs = list()
 
 for (i in 1:number_conditions) {
   
-  # Calculate percentage of mitochondrial and ribosomal RNA
-  filtered_list_seurat_obj[[i]] = ARN_percentage_fun(filtered_list_seurat_obj[[i]])
-  
-  p1 = VlnPlot(filtered_list_seurat_obj[[i]], features = "percent.mt", group.by = "orig.ident") +
+  p1 = VlnPlot(filtered_list_seurat_obj[[i]], 
+               features = "percent.mt", 
+               group.by = "orig.ident") +
     geom_hline(aes(yintercept = 25), color = "red", size = 1) +
     ylim(0,100)  +
     scale_fill_manual(values = color_code, limits = force) +
     theme(axis.title.x = element_blank()) +
     NoLegend()
 
-  p2 = VlnPlot(filtered_list_seurat_obj[[i]], features = "percent.ribo", group.by = "orig.ident") +
+  p2 = VlnPlot(filtered_list_seurat_obj[[i]], 
+               features = "percent.ribo", 
+               group.by = "orig.ident") +
     geom_hline(aes(yintercept = 5), color = "red", size = 1) +
     ylim(0,100) +
     scale_fill_manual(values = color_code, limits = force) +
     theme(axis.title.x = element_blank()) +
     NoLegend()
 
-  p3 = FeatureScatter(filtered_list_seurat_obj[[i]], feature1 = "percent.mt", feature2 = "percent.ribo", group.by = "orig.ident") +
+  p3 = FeatureScatter(filtered_list_seurat_obj[[i]], 
+                      feature1 = "percent.mt", 
+                      feature2 = "percent.ribo", 
+                      group.by = "orig.ident") +
     ylim(0,100) +
     scale_color_manual(values = color_code, limits = force) +
-    annotate("rect", xmin = 0, xmax = 25, ymin = 5, ymax = 60, alpha = 0.1, color = "red")
-  
+    annotate("rect", xmin = 0, xmax = 25, ymin = 5, 
+             ymax = 60, alpha = 0.1, color = "red") +
+    ggtitle(names(filtered_list_seurat_obj[i])) +
+    NoLegend()
+
   plot_percentage_graphs[[i]] = list(p1, p2, p3)
   
 }
@@ -225,8 +249,6 @@ for (i in 1:number_conditions) {
 
 
 
-
-
 ## Filtre_rmMT : les gènes **mitochondriaux** sont retirés de l'analyse
 
 Pour éviter que les cellules ne clusterisent sur la base de leurs gènes mitochondriaux, on décide de les retirer de l'analyse. => **Filtre_rmMT**  
@@ -234,14 +256,14 @@ Pour éviter que les cellules ne clusterisent sur la base de leurs gènes mitoch
 ```{r, Filter_rmMT, warning=F, message=F}
 
 rm_mito_list = function(obj) {
-  # Extraction des noms des features pour ADT
+  # Extract features "ADT" names
   DefaultAssay(obj) = "ADT"
   feature_adt_list = rownames(obj)
-  # Extraction de tous les noms des gènes pour RNA et aussi distinction pour les gènes mitochondriaux
+  # Extract features "RNA gene" names and identify mitochondrial ones
   DefaultAssay(obj) = "RNA"
   mito_genes = rownames(obj)[grep("^MT-", rownames(obj))]
   feature_rna_list = rownames(obj)
-  # Groupement des listes et on conserve seulement les features qui ne matchent pas avec la liste des gènes mitochondriaux
+  # Keep ADT and non mitochondrial RNA genes
   feature_list = c(feature_adt_list, feature_rna_list)
   features_keep = setdiff(feature_list, mito_genes) # The elements of setdiff(x,y) are those elements in x but not in y.
   return(features_keep)
@@ -264,11 +286,12 @@ for (i in 1:number_conditions) {
 
 
 
-# Récapitulatif du nombre de celluels et gènes dans chaque condition
+# Récapitulatif des filtres et données
+
 
 ## Tableau récapitulatif des filtres appliqués 
 
-```{r}
+```{r, Filter_summary}
 
 extract_nbgene_detected = function(obj) {
   matrix = as.data.frame(obj@assays$RNA@counts)
@@ -279,30 +302,30 @@ extract_nbgene_detected = function(obj) {
 
 # Initialize
 filter_tab = data_frame(condition = character(),
-                 category = character(),
-                 no_filter = integer(),
-                 filter_nbG_keep = integer(),
-                 filter_nbG_pMT_keep = integer(),
-                 filter_nbG_pMT_pRB_keep = integer(),
-                 filter_nbG_pMT_pRB_rmMT_keep = integer())
+                        category = character(),
+                        no_filter = integer(),
+                        filter_nbG_keep = integer(),
+                        filter_nbG_pMT_keep = integer(),
+                        filter_nbG_pMT_pRB_keep = integer(),
+                        filter_nbG_pMT_pRB_rmMT_keep = integer())
   
 for(i in 1:number_conditions) {  # très long
 
   temp_gene = data.frame(condition = names(list_seurat_obj[i]),
-                        category = "genes",
-                        no_filter = extract_nbgene_detected(list_seurat_obj[[i]]),
-                        filter_nbG_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG"]]),
-                        filter_nbG_pMT_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT"]]),
-                        filter_nbG_pMT_pRB_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB"]]),
-                        filter_nbG_pMT_pRB_rmMT_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT"]]))
+                         category = "genes",
+                         no_filter = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj"]]),
+                         filter_nbG_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG"]]),
+                         filter_nbG_pMT_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT"]]),
+                         filter_nbG_pMT_pRB_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB"]]),
+                         filter_nbG_pMT_pRB_rmMT_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT"]]))
   
-    temp_cell = data.frame(condition = names(list_seurat_obj[i]),
-                          category = "cells",
-                          no_filter = ncol(list_seurat_obj[[i]]),
-                          filter_nbG_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG"]]),
-                          filter_nbG_pMT_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT"]]),
-                          filter_nbG_pMT_pRB_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB"]]),
-                          filter_nbG_pMT_pRB_rmMT_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT"]]))
+  temp_cell = data.frame(condition = names(list_seurat_obj[i]),
+                         category = "cells",
+                         no_filter = ncol(list_seurat_obj_filter[[i]][["seurat_obj"]]),
+                         filter_nbG_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG"]]),
+                         filter_nbG_pMT_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT"]]),
+                         filter_nbG_pMT_pRB_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB"]]),
+                         filter_nbG_pMT_pRB_rmMT_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT"]]))
   
    temp = rbind(temp_gene, temp_cell)
    filter_tab = rbind(filter_tab, temp)
@@ -321,22 +344,99 @@ filter_tab %>%
   
 ```
 
-D'autres filtres pourraient être appliqués sur le jeu de données (ex : écarter des gènes qui monopolisent les reads...).  
-Avant d'aller plus loin de ce côté, on continue l'analyse des données pour voir ce qu'il est pertinent d'appliquer ou non. 
+
+D'autres filtres pourraient être appliqués sur le jeu de données. Par exemple, on pourrait appliquer un filtre sur le nombre d'UMI nécessaire par gène pour qu'il ne soit pas considéré comme du bruit de fond, ou alors sur le nombre de cellules devant exprimer le gène pour qu'on le conserve, ou encore écarter les gènes qui monopolisent les reads... Avant d'aller plus loin de ce côté, on continue l'analyse des données pour voir ce qu'il est pertinent d'appliquer ou non. Cela évite d'enlever trop d'informations dès le début. Il sera toujours possible d'appliquer ce genre de filtre par la suite si on se rend compte que les données sont biaisées.
+
+## Visualisation de l'effet des filtres
+
+On fait une Normalisation rapide et une PCA pour visuliser les effets des filtres mais ce n'est pas enregistré pour la suite.
+
+```{r, Normalize and Reduce}
+
+list_obj = lapply(list_seurat_obj_filter, function(x) {
+  lapply(x, function(y) {
+    y = NormalizeData(y, normalization.method = "LogNormalize", scale.factor = 10000)
+    y = FindVariableFeatures(y, selection.method = "vst", nfeatures = 2000)
+    y = ScaleData(y)
+    y = RunPCA(y, features = VariableFeatures(y), npcs = 50)
+    y = RunUMAP(y, reduction = "pca", dims = 1:30)
+  })
+})
+
+```
+
+```{r, Plots Dim per filter, fig.width = 20, fig.height = 28}
+
+dim_graphs = list()
+
+for (i in 1:length(list_obj)) {
   
-## Tableau des infos par condition 
+  name_cond = names(list_obj[i])
+  cond_obj = list_obj[[i]]
+  p1 = DimPlot(cond_obj$seurat_obj, reduction = "umap") + ggtitle(paste0(name_cond, " - Before Filter")) + NoLegend()
+  p2 = DimPlot(cond_obj$seurat_obj_nbG, reduction = "umap") + ggtitle(paste0(name_cond," - After Filter nbg")) + NoLegend()
+  p3 = DimPlot(cond_obj$seurat_obj_nbG_pMT, reduction = "umap") + ggtitle(paste0(name_cond," - After Filter pMT")) + NoLegend()
+  p4 = DimPlot(cond_obj$seurat_obj_nbG_pMT_pRB, reduction = "umap") + ggtitle(paste0(name_cond," - After Filter pRB")) + NoLegend()
+  p5 = DimPlot(cond_obj$seurat_obj_nbG_pMT_pRB_rmMT, reduction = "umap") + ggtitle(paste0(name_cond," - After Filter rmMT")) + NoLegend()
+  dim_graphs[[i]] = list(p1, p2, p3, p4, p5)
+  
+}
 
-Après l'application des filtres : 
+grid.arrange(grobs = unlist(dim_graphs, recursive = FALSE),
+             ncol = 5)
 
-```{r}
+```
 
-names(filtered_list_seurat_obj) = names(list_seurat_obj)
+```{r, Plots Features per filter, fig.width = 20, fig.height = 28}
 
-summary_tab = data.frame(condition = character(),
-                         statistic = character(),
-                         nbgenes_per_cell = numeric(),
-                         percent_MT_RNA = numeric(),
-                         percent_RB_RNA = numeric())
+features_graphs = list()
+
+for (i in 1:length(list_obj)) {
+  
+  name_cond = names(list_obj[i])
+  cond_obj = list_obj[[i]]
+  
+  p1 = FeaturePlot(cond_obj$seurat_obj, "nFeature_RNA", reduction = "umap")  + 
+    ggtitle(paste0(name_cond, " - nFeatureRNA", "\n", "- Before Filter nbg"))
+  
+  p2 = FeaturePlot(cond_obj$seurat_obj_nbG, "nFeature_RNA", reduction = "umap")  + 
+    ggtitle(paste0(name_cond, " - nFeatureRNA", "\n", "- After Filter nbg"))
+  
+  p3 = FeaturePlot(cond_obj$seurat_obj_nbG, "percent.mt", reduction = "umap", 
+                   min.cutoff = 0, max.cutoff = 80) + 
+    ggtitle(paste0(name_cond, " - percent.mt", "\n", "- Before Filter pMT")) 
+  
+  p4 = FeaturePlot(cond_obj$seurat_obj_nbG_pMT, "percent.mt", 
+                   reduction = "umap", min.cutoff = 0, max.cutoff = 80) + 
+    ggtitle(paste0(name_cond," - percent.mt", "\n", "- After Filter pMT"))
+  
+  p5 = FeaturePlot(cond_obj$seurat_obj_nbG_pMT, 
+                   "percent.ribo", reduction = "umap") + 
+    ggtitle(paste0(name_cond, " - percent.ribo", "\n", "- Before Filter pRB"))
+  
+  p6 = FeaturePlot(cond_obj$seurat_obj_nbG_pMT_pRB, "percent.ribo", 
+                   reduction = "umap") + 
+    ggtitle(paste0(name_cond, " - percent.ribo", "\n", "- After Filter pRB"))
+
+  features_graphs[[name_cond]] = list(p1, p2, p3, p4, p5, p6)
+  
+}
+
+grid.arrange(grobs = unlist(features_graphs, recursive = FALSE),
+             ncol = 6)
+
+```
+
+
+## Tableau des caractéristiques des cellules conservées
+
+```{r, Cells parameters}
+
+summary_cell_tab = data.frame(condition = character(),
+                              statistic = character(),
+                              nbgenes_per_cell = numeric(),
+                              percent_MT_RNA = numeric(),
+                              percent_RB_RNA = numeric())
 
 for(i in 1:number_conditions) {
   
@@ -354,20 +454,78 @@ for(i in 1:number_conditions) {
                       min(filtered_list_seurat_obj[[i]]$percent.ribo), 
                       median(filtered_list_seurat_obj[[i]]$percent.ribo), 
                       max(filtered_list_seurat_obj[[i]]$percent.ribo))
-                    )
-  summary_tab = rbind(summary_tab, temp)
+  )
+  summary_cell_tab = rbind(summary_cell_tab, temp)
   
 }
 
-summary_tab %>%
+summary_cell_tab %>%
   kable() %>%
   kable_styling()
 
 ```
 
-*NB : Il serait possible d'appliquer un filtre sur le nombre d'UMI nécessaire par gène pour qu'il ne soit pas considéré comme du bruit de fond ou alors sur le nombre de cellules devant exprimer le gène pour qu'on le conserve mais on a décidé de ne pas le faire pour le moment. Cela évite d'enlever trop d'informations dès le début. Il sera toujours possible d'appliquer ce genre de filtre par la suite si on se rend compte que les données sont biaisées.*
+## Tableau des caractéristiques des gènes conservés
+
+```{r, Genes parameters}
+
+# Liste de matrices (gène/cellule/nbUMI) par condition
+list_mat = lapply(filtered_list_seurat_obj, function(x) { 
+  as.data.frame(x@assays$RNA@counts) }) 
+
+list_mat = lapply(list_mat, function(x) {
+    
+    temp_mat = x
+    temp_mat_binaire = temp_mat %>% mutate_all(as.logical)
+
+    temp_all_gene = data.frame(
+      gene = rownames(temp_mat),
+      nbcell_expressed = rowSums(temp_mat_binaire),
+      nbcell_expressed_1UMI = rowSums(temp_mat == 1),
+      total_UMI = rowSums(temp_mat),
+      moy_UMI_per_cell_expressed = round(rowMeans(temp_mat != 0),3)
+    )
+        
+    temp_summary_gene = data.frame(
+      min_UMI_per_gene = min(colSums(temp_mat)),
+      median_UMI_per_gene = median(colSums(temp_mat)),
+      max_UMI_per_gene = max(colSums(temp_mat)),
+      min_nbcell_expressed = min(colSums(temp_mat_binaire)),
+      median_nbcell_expressed = median(colSums(temp_mat_binaire)),
+      max_nbcell_expressed = max(colSums(temp_mat_binaire)),
+      nbgenes_1UMI = length(colSums(temp_mat)[colSums(temp_mat) == 1]),
+      nbgenes_1cell = length(colSums(temp_mat_binaire)[colSums(temp_mat_binaire) == 1]),
+      mean_nbcells_1UMI = mean(temp_all_gene$nbcell_expressed_1UMI)
+    )
+
+    return(list(temp_all_gene, temp_summary_gene))
+    
+  })
+
+# Groupement des tableaux des conditions dans un tableau général
+list_temp_all_gene <- lapply(list_mat, `[[`, 1)
+list_temp_summary_gene <- lapply(list_mat, `[[`, 2)
+
+all_gene_tab = dplyr::bind_rows(list_temp_all_gene, .id = "condition")
+summary_gene_tab = dplyr::bind_rows(list_temp_summary_gene, .id = "condition")
+
+```
+
+
+# Conclusion 
 
 ```{r, Save outputs}
+
+# 
+all_gene_tab
+summary_gene_tab
+summary_cell_tab
+
+grid.arrange(grobs = unlist(features_graphs, recursive = FALSE),
+             ncol = 6)
+
+
+
 
 ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, nrow = 2, top = textGrob("nFeature_RNA")),
 filename = paste0(directory_output, "plot_feature_filter.png"),
@@ -395,46 +553,4 @@ rm(list = ls())
 sessionInfo()
 
 ```
-
-
-
-
-
-
-
-
-<!-- ## .Gènes détectés par cellules et doublets - Application des filtres -->
-
-
-<!-- As the ribosomal proteins are highly expressed they will make up a larger proportion of the transcriptional landscape when fewer of the lowly expressed genes are detected.  -->
-
-
-
-<!-- ```{r,  fig.width=14, fig.height=6, fig.fullwidth=TRUE} -->
-<!-- p1 = VlnPlot(merge_allcond, features = "nFeature_RNA") -->
-<!-- p2 = p1 &  -->
-<!--   geom_hline(aes(yintercept = 6500), color = "red", size = 1) & -->
-<!--   geom_hline(aes(yintercept = 1000), color = "red", size = 1) -->
-<!-- p1 | p2 -->
-<!-- ``` -->
-<!-- Les éléments qui semblent avoir beaucoupl plus de gènes détectés par rapport aux autres cellules peuvent en faite correspondre à des doublets et ceux qui présentant très peu de gènes sont certainement de mauvaise qualité. On applique donc deux filtres qualité pour garder les valeurs les plus qualitatives : les cellules pour lesquelles on détecte **entre 1000 et 6500 gènes**.   -->
-<!-- A standard approach is to filter cells with low amount of reads as well as genes that are present in at least a certain amount of cells. Here we will only consider cells with at least 200 detected genes and genes need to be expressed in at least 3 cells.  -->
-
-<!-- ```{r, fig.width=18, fig.height=6, fig.fullwidth=TRUE} -->
-<!-- p1 = VlnPlot(merge_allcond, features = "nCount_RNA") -->
-<!-- p2 = FeatureScatter(merge_allcond, feature1 = "nCount_RNA", feature2 = "percent.mt") -->
-<!-- p3 = FeatureScatter(merge_allcond, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")  -->
-<!-- p1 | p2 | p3 -->
-<!-- ``` -->
-<!-- On observe ici le nombre de transcrits détectés par cellules, is en relation avec le pourcentage d'ARN mitochondrial et le nombre de gènes détectés par cellule. On observe que les cellules avec peu de transcrits détectés présentent pour certaines un fort pourcentage mitochondrial. Elles seront enlevées avec l'application du filtre.      -->
-
-
-<!-- Additionally, we can also see which genes contribute the most to such reads. We can for instance plot the percentage of counts per gene. -->
-<!-- ```{r} -->
-<!-- par(mar = c(4, 8, 2, 1)) -->
-<!-- C = merge_filter_mtrb@assays$RNA@counts -->
-<!-- C <- Matrix::t(Matrix::t(C)/Matrix::colSums(C)) * 100 -->
-<!-- # most_expressed <- order(apply(C, 1, median), decreasing = T)[20:1] -->
-<!-- boxplot(as.matrix(t(C[most_expressed, ])), cex = 0.1, las = 1, xlab = "% total count per cell", col = (scales::hue_pal())(20)[20:1], horizontal = TRUE) -->
-<!-- ``` -->
 

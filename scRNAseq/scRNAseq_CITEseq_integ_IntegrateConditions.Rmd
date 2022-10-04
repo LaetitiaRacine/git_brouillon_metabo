@@ -98,31 +98,32 @@ integration_fun = function(list_obj, number_conditions) {
   
 }
 
-list_seurat_obj_cc = integration_fun(list_seurat_obj_cc)
-list_seurat_obj = integration_fun(list_seurat_obj)
+integ_seurat_obj_cc_log = integration_fun(list_seurat_obj_cc, number_conditions)
+integ_seurat_obj_log = integration_fun(list_seurat_obj, number_conditions)
 
 ```
 
 ```{r, Integration based on SCTransform normalization}
 
-integration_sct_fun = function(list_obj) {
+
+integration_sct_fun = function(list_obj, number_conditions, name_assay) {
   
   # choose SCT assay as default assay for each object
-  for (i in 1:number_conditions) {DefaultAssay(list_obj[[i]]) = "SCT"}
+  for (i in 1:number_conditions) {DefaultAssay(list_obj[[i]]) = name_assay}
   # select features that are repeatedly variable across datasets for integration
   features = SelectIntegrationFeatures(object.list = list_obj,
                                        nfeatures = 2000, 
-                                       assay = rep("SCT", number_conditions),
+                                       assay = rep(name_assay, number_conditions),
                                        verbose = TRUE)
   # prepare the object for integration
   list_obj = PrepSCTIntegration(object.list = list_obj,
-                                assay = rep("SCT", number_conditions),
+                                assay = rep(name_assay, number_conditions),
                                 anchor.features = features,
                                 verbose = TRUE)
   
   # identify anchors to integrate the datasets
   anchors = FindIntegrationAnchors(object.list = list_obj,
-                                   assay = rep("SCT", number_conditions),
+                                   assay = rep(name_assay, number_conditions),
                                    anchor.features = features,
                                    normalization.method = "SCT",
                                    reduction = "cca",
@@ -137,22 +138,25 @@ integration_sct_fun = function(list_obj) {
   
 }
 
-list_seurat_obj_cc = integration_sct_fun(list_seurat_obj_cc)
-list_seurat_obj = integration_sct_fun(list_seurat_obj)
+integ_seurat_obj_cc_sct = integration_sct_fun(list_seurat_obj_cc, number_conditions, "SCT_with_ccreg")
+integ_seurat_obj_sct = integration_sct_fun(list_seurat_obj, number_conditions, "SCT_without_ccreg")
 
 ```
 
 ```{r, Save outputs}
 
-saveRDS(list_seurat_obj_cc, paste0(directory_output, "integrate_seurat_obj_qc_norm_ccr.rds"))
-saveRDS(list_seurat_obj, paste0(directory_output, "integrate_seurat_obj_qc_norm.rds"))
+# saveRDS(integ_seurat_obj_cc_log, paste0(directory_output, "integratelog_seurat_obj_qc_norm_ccr.rds"))
+# saveRDS(integ_seurat_obj_log, paste0(directory_output, "integratelog_seurat_obj_qc_norm.rds"))
+
+saveRDS(integ_seurat_obj_cc_sct, paste0(directory_output, "integratesct_seurat_obj_qc_norm_ccr.rds"))
+saveRDS(integ_seurat_obj_sct, paste0(directory_output, "integratesct_seurat_obj_qc_norm.rds"))
 
 ```
 
 ```{r, Rsession}
 
 # Clean working space and show package version
-rm(list = ls())
-sessionInfo()
+# rm(list = ls())
+# sessionInfo()
 
 ```

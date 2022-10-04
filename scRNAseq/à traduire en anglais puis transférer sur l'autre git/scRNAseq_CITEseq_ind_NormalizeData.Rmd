@@ -93,11 +93,13 @@ NormalizeData() avec la méthode “LogNormalize” : soit x le nombre d'UMI d'u
 "LogNormalize scales the data by library size so it eliminates the confounding effect of different read depth across the cells."
 ```{r, NormalizeData}
 
-list_seurat_obj = lapply(list_seurat_obj, function(x) { NormalizeData(object = x, 
-                                                                      assay = "RNA",
-                                                                      normalization.method = "LogNormalize",
-                                                                      scale.factor = 10000,
-                                                                      verbose = TRUE) })
+list_seurat_obj = lapply(list_seurat_obj, function(x) { 
+  NormalizeData(object = x, 
+                assay = "RNA",
+                normalization.method = "LogNormalize",
+                scale.factor = 10000,
+                verbose = TRUE) 
+})
 
 ```
 
@@ -109,11 +111,14 @@ Pour extraire cette liste de gènes, on utilise la méthode "vst" : First, fits 
 *Les prochaines analyses comme les UMAP ou PCA seront tracées sur la base de ces 2000 gènes.*
 ```{r, FindVariableFeatures}
 
-list_seurat_obj = lapply(list_seurat_obj, function(x) { FindVariableFeatures(object = x, 
-                                                                            assay = "RNA",
-                                                                            selection.method = 'vst',
-                                                                            nfeatures = "2000",   
-                                                                            verbose = TRUE) })
+list_seurat_obj = lapply(list_seurat_obj, function(x) { 
+  FindVariableFeatures(object = x, 
+                       assay = "RNA",
+                       selection.method = 'vst',
+                       nfeatures = "2000",   
+                       verbose = TRUE) 
+})
+
 ```
 
 ```{r, MostVariableGenes, message=F, fig.width = 20,results='hold'}
@@ -160,10 +165,12 @@ premier scale sans régression, il est possible de refaire un autre scale après
 
 ```{r, ScaleData}
 
-list_seurat_obj = lapply(list_seurat_obj, function(x) { ScaleData(object = x, 
-                                                                  assay = "RNA",
-                                                                  split.by = "orig.ident",
-                                                                  verbose = TRUE) })
+list_seurat_obj = lapply(list_seurat_obj, function(x) { 
+  ScaleData(object = x, 
+            assay = "RNA",
+            split.by = "orig.ident",
+            verbose = TRUE) 
+})
 
 ```
 
@@ -177,32 +184,41 @@ L'identification de la phase du cycle cellulaire pour les cellules permettra de 
 
 ```{r}
 
-cat("There are", length(cc.genes$s.genes), "markers associated to S phase :", "\n", cc.genes$s.genes, "\n")
-cat("There are", length(cc.genes$g2m.genes), "markers associated to G2M phase :", "\n", cc.genes$g2m.genes, "\n")
+cat("There are", length(cc.genes$s.genes), 
+    "markers associated to S phase :", "\n", 
+    cc.genes$s.genes, "\n")
+
+cat("There are", length(cc.genes$g2m.genes), 
+    "markers associated to G2M phase :", "\n", 
+    cc.genes$g2m.genes, "\n")
 
 ```
 
 ## Attribution d'un score de cycle cellulaire pour les cellules
 ```{r, results = 'hold', fig.width=20, fig.height=6, fig.fullwidth=TRUE}
 
-list_seurat_obj = lapply(list_seurat_obj, function(x) { CellCycleScoring(object = x, 
-                                                                         assay = "RNA",
-                                                                         s.features = cc.genes$s.genes,
-                                                                         g2m.features = cc.genes$g2m.genes,
-                                                                         set.ident = TRUE,
-                                                                         verbose = TRUE) })
+list_seurat_obj = lapply(list_seurat_obj, function(x) { 
+  CellCycleScoring(object = x, 
+                   assay = "RNA",
+                   s.features = cc.genes$s.genes,
+                   g2m.features = cc.genes$g2m.genes,
+                   set.ident = TRUE,
+                   verbose = TRUE) 
+})
 
 ```
 
 ## Répartition des cellules sur la base de leur score de cycle cellulaire
 ```{r}
 
-list_seurat_obj = lapply(list_seurat_obj, function(x) { RunPCA(object = x, 
-                                                               assay = "RNA",
-                                                               reduction.name = "pca.cellcycle",
-                                                               npcs = 50,
-                                                               features = c(cc.genes$s.genes, cc.genes$g2m.genes), 
-                                                               verbose = TRUE) })
+list_seurat_obj = lapply(list_seurat_obj, function(x) { 
+  RunPCA(object = x, 
+         assay = "RNA",
+         reduction.name = "pca.cellcycle",
+         npcs = 50,
+         features = c(cc.genes$s.genes, cc.genes$g2m.genes), 
+         verbose = TRUE) 
+})
 
 ```
 
@@ -254,13 +270,18 @@ grid.arrange(grobs = unlist(plot_cc_list, recursive = FALSE),
 ```{r}
 
 # Liste de matrices (gène/cellule/nbUMI) par condition
-list_mat = lapply(list_seurat_obj, function(x) { as.data.frame(x@assays$RNA@counts) }) 
+list_mat = lapply(list_seurat_obj, function(x) { 
+  as.data.frame(x@assays$RNA@counts) 
+}) 
 
 # Restriction des tableaux aux gènes du cycle cellulaire
 print("Filter genes to keep only cell cycle genes")
-list_mat = lapply(list_mat, function(x) { x %>% dplyr::filter(row.names(x) %in% c(cc.genes$s.genes, cc.genes$g2m.genes)) })
+list_mat = lapply(list_mat, function(x) { 
+  x %>% dplyr::filter(row.names(x) %in% c(cc.genes$s.genes, cc.genes$g2m.genes)) 
+})
   
-# Extraction du nombre de cellules détectant chaque gène et des statistiques sur les UMI (total, moyenne, médiane, variance)
+# Extraction du nombre de cellules détectant chaque gène et 
+# des statistiques sur les UMI (total, moyenne, médiane, variance)
 print("Calculate tab statistics")
 list_mat = lapply(list_mat, function(x) {
     print("Calculate temp_nbcells tab")
@@ -298,25 +319,29 @@ tab_cc %>%
 
 ```{r, results = 'hold', fig.width=20, fig.height=8, fig.fullwidth=TRUE}
 
-plot_smedian = ggplot(tab_cc %>% filter(phase == "S"), aes(x=gene, y=medianUMI, fill=condition)) +
+plot_smedian = ggplot(tab_cc %>% filter(phase == "S"), 
+                      aes(x=gene, y=medianUMI, fill=condition)) +
   geom_col(position = "dodge") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
   #scale_fill_manual(values = color_code, limits = force) +
   ggtitle("Phase S genes - Median UMI")
 
-plot_smean = ggplot(tab_cc %>% filter(phase == "S"), aes(x=gene, y=meanUMI, fill=condition)) +
+plot_smean = ggplot(tab_cc %>% filter(phase == "S"), 
+                    aes(x=gene, y=meanUMI, fill=condition)) +
     geom_col(position = "dodge") +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
    #scale_fill_manual(values = color_code, limits = force) +
     ggtitle("Phase S genes - Mean UMI")
   
-plot_g2median = ggplot(tab_cc %>% filter(phase == "G2M"), aes(x=gene, y=medianUMI, fill=condition)) +
+plot_g2median = ggplot(tab_cc %>% filter(phase == "G2M"), 
+                       aes(x=gene, y=medianUMI, fill=condition)) +
     geom_col(position = "dodge") +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
    #scale_fill_manual(values = color_code, limits = force) +
     ggtitle("Phase G2M genes - Median UMI")
 
-plot_g2mean = ggplot(tab_cc %>% filter(phase == "G2M"), aes(x=gene, y=meanUMI, fill=condition)) +
+plot_g2mean = ggplot(tab_cc %>% filter(phase == "G2M"), 
+                     aes(x=gene, y=meanUMI, fill=condition)) +
     geom_col(position = "dodge") +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
    #scale_fill_manual(values = color_code, limits = force) +
@@ -351,7 +376,8 @@ center residuals to have mean zero
 list_seurat_obj_cc = lapply(list_seurat_obj, function(x) { 
   SCTransform(object = x, 
               assay = "RNA", 
-              new.assay.name = "SCT_with_ccreg", 
+              # new.assay.name = "SCT_with_ccreg", 
+              new.assay.name = "SCT",
               method = "glmGamPoi", 
               do.center = TRUE, 
               do.scale = FALSE,
@@ -366,7 +392,8 @@ list_seurat_obj_cc = lapply(list_seurat_obj, function(x) {
 list_seurat_obj = lapply(list_seurat_obj, function(x) { 
   SCTransform(object = x, 
               assay = "RNA", 
-              new.assay.name = "SCT_without_ccreg", 
+              # new.assay.name = "SCT_without_ccreg", 
+              new.assay.name = "SCT",
               method = "glmGamPoi", 
               do.center = TRUE, 
               do.scale = FALSE,

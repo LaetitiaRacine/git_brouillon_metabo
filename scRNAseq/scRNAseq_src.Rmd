@@ -83,6 +83,25 @@ rmarkdown::render(input = ,
 - Vérifier le nombre d’UMI par gènes
 - Normaliser les données avec SCTransform
 
+```{r}
+
+rmarkdown::render(input = ,
+                  output_format = "html_document",
+                  output_dir = "",
+                  output_file = paste0(Sys.Date(), '_', "scRNAseq_CITEseq_ind_FilterData.html"))
+
+```
 
 
 # 4) scRNAseq_CITEseq_merge_IntegrateDatasets.Rmd
+
+```{r}
+
+rmarkdown::render(input = ,
+                  output_format = "html_document",
+                  output_dir = "",
+                  output_file = paste0(Sys.Date(), '_', "scRNAseq_CITEseq_integ_IntegrateConditions.html"))
+
+```
+
+

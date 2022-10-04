@@ -22,6 +22,9 @@ library(ggplot2)
 
 ```
 
+https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1
+https://satijalab.org/seurat/articles/dim_reduction_vignette.html
+
 ```{r, Working directories and external script}
 
 directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
@@ -43,326 +46,190 @@ source(file = paste0(directory_bin, "functions_constantes.R"))
 ```{r, Input loading}
 
 dir = pic_last_dir(paste0(directory_exp, "scRNAseq_CITEseq_integ_IntegrateConditions/"))
-# Object with cc regression
-seurat_obj_cc = readRDS(paste0(dir, "/", "integrate_seurat_obj_qc_norm_ccr.rds"))
-# Object without cc regression
-seurat_obj = readRDS(paste0(dir, "/", "integrate_seurat_obj_qc_norm.rds"))
+# Object with cc regression and log integration
+seurat_obj_cc_log = readRDS(paste0(dir, "/", "integratelog_seurat_obj_qc_norm_ccr.rds"))
+# Object with cc regression and sct integration
+# seurat_obj_cc_sct = readRDS(paste0(dir, "/", "integratesct_seurat_obj_qc_norm_ccr.rds"))
+# Object without cc regression and log integration
+seurat_obj_log = readRDS(paste0(dir, "/", "integratelog_seurat_obj_qc_norm.rds"))
+# Object without cc regression and sct integration
+# seurat_obj_sct = readRDS(paste0(dir, "/", "integratesct_seurat_obj_qc_norm.rds"))
+
+```
+
+# Perform linear dimensional reduction and determine the "dimensionality" (PCA)
+
+https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1
+Jackstraw method is time consuming for large dataset. We choose to use only the heuristic elbow plot method to determine the dimensionality.
+On commence par tracer des "elbow plots" qui permettent de déterminer visuellement un nombre de dimensions à conserver (approximatif). Les dimensions sont rangées selon le pourcentage de variance qu'elles expliquent. On souhaite conserver les dimensions qui expliquent le plus la variance. Pour cela, on repère l'endroit où la courbe fait un coude.
+De façon approximative, on observe que les 30 premières dimensions représentent la majorité de la variance donc on ne s'occupe plus des autres dimensions. 
+
+```{r, PCA and dimensionality}
+
+dim_choice_fun = function(obj, name_assay, reduction_pca) {
+  
+  # Scale needed after integration
+  obj = ScaleData(object = obj,
+                  assay = name_assay,
+                  split.by = "orig.ident",
+                  verbose = TRUE)
+  # PCA calculation
+  obj = RunPCA(object = obj,
+               assay = name_assay,
+               npcs = 100,
+               reduction.name = reduction_pca,
+               verbose = TRUE)
+  
+  # Plots
+  pca_plot = DimPlot(object = obj, 
+                     group.by = "orig.ident", 
+                     reduction = reduction_pca) + NoLegend() 
+  
+  pca_split_plot = DimPlot(object = obj, 
+                           group.by = "orig.ident", 
+                           split.by = "orig.ident", 
+                           reduction = reduction_pca)
+   
+  elb_plot = ElbowPlot(object = obj, ndims = 100, reduction = reduction_pca) +
+    geom_vline(xintercept = 10, color = "red", size = 1) +
+    geom_vline(xintercept = 20, color = "red", size = 1) +
+    geom_vline(xintercept = 30, color = "red", size = 1) +
+    geom_vline(xintercept = 40, color = "red", size = 1) +
+    theme(plot.background = element_rect(fill = "white"))
+  
+  pca_htmp = DimHeatmap(object = obj,
+                       dims = 1:30,
+                       reduction = reduction_pca,
+                       balanced = TRUE)
+
+  pca_dim = VizDimLoadings(object = obj,
+                           dims = 1:30, 
+                           reduction = reduction_pca)
+
+  # Outputs
+  results = list(obj = obj,
+                 pca_plot = pca_plot,
+                 pca_split_plot = pca_split_plot,
+                 elb_plot = elb_plot,
+                 pca_htmp = pca_htmp,
+                 pca_dim = pca_dim)
+  return(results)
+  
+}
+
+dim_seurat_obj_cc_log = dim_choice_fun(seurat_obj_cc_log, "integrated.log", "pca.lognorm")
+seurat_obj_cc_log = dim_seurat_obj_cc_log$obj
+
+# dim_seurat_obj_log = dim_choice_fun(seurat_obj_log, "integrated.log", "pca.lognorm")
+# seurat_obj_log = dim_seurat_obj_log$obj
+# 
+# dim_seurat_obj_cc_sct = dim_choice_fun(seurat_obj_cc_sct, "integrated.log", "pca.lognorm")
+# seurat_obj_cc_sct = dim_seurat_obj_cc_sct$obj
+# 
+# dim_seurat_obj_sct = dim_choice_fun(seurat_obj_sct, "integrated.log", "pca.lognorm")
+# seurat_obj_sct = dim_seurat_obj_sct$obj
+
+```
+
+```{r, PCA plot1, fig.width = 20}
+
+(dim_seurat_obj_cc_log$elb_plot | dim_seurat_obj_cc_log$pca_plot) / dim_seurat_obj_cc_log$pca_split_plot
+# (dim_seurat_obj_log$elb_plot | dim_seurat_obj_log$pca_plot | dim_seurat_obj_log$pca_split_plot)
+# (dim_seurat_obj_cc_sct$elb_plot | dim_seurat_obj_cc_sct$pca_plot | dim_seurat_obj_cc_sct$pca_split_plot)
+# (dim_seurat_obj_sct$elb_plot | dim_seurat_obj_sct$pca_plot | dim_seurat_obj_sct$pca_split_plot)
+
+```
+
+```{r, PCA plot2, fig.height = 20, fig.width = 20}
+
+dim_seurat_obj_cc_log$pca_htmp / dim_seurat_obj_cc_log$pca_dim
+# dim_seurat_obj_log$pca_htmp / dim_seurat_obj_log$pca_dim
+# dim_seurat_obj_cc_sct$pca_htmp / dim_seurat_obj_cc_sct$pca_dim
+# dim_seurat_obj_sct$pca_htmp / dim_seurat_obj_sct$pca_dim
+
+```
+
+```{r, Dimension choice}
+
+print("We chose dimensions 1 --> 30 for downstream analysis.")
+dim_choice = c(1:30)
 
 ```
 
 
-
-
-<!-- ### .Vérification du nombre d'UMI par gènes      => à mettre dans filter ???? -->
-
-<!-- Nombre de gènes représentés par un seul UMI -->
-<!-- ```{r} -->
-<!-- rna_count = as.data.frame(obj@assays$RNA@counts) -->
-
-<!-- tab_umi = data.frame(genes = as.character(), -->
-<!--                      nb_cell_detect = as.numeric(), -->
-<!--                      total_umi = as.numeric(), -->
-<!--                      moyUMI_cell = as.numeric()) -->
-
-<!-- library(tidyverse) -->
-<!-- library(matrixStats) -->
-
-<!-- tab = rna_count[10:15, 10:15] -->
-<!-- tab = tab %>% mutate(totalUMI = rowSums(.)) -->
-<!-- tab = tab %>% mutate(moyUMI_cell = totalUMI/ncol(tab)) -->
-<!-- tab = tab %>% mutate(medianUMI_cell = rowMedians(as.matrix(tab[,c(-ncol(tab), -ncol(tab)-1)]))) -->
-<!-- tab = tab %>% tibble::rownames_to_column(var = "gene") -->
-
-<!-- gene1UMI = nrow(tab%>%filter(totalUMI==1)) # gene détecté dans une seule cellule avec un seul UMI  -->
-<!-- geneMed5UMI = nrow(tab%>%filter(medianUMI_cell==5)) -->
-<!-- ``` -->
-
-
-
-**Doublets** : il existe un pourcentage d'erreur d'encapsulation des cellules en fonction du nombre inséré dans la puce. Il est en effet possible que des deux cellules aient été emprisonnées dans le même GEM, leurs transcrits auront donc tous le même barcode et seront considérés comme appartenant à une seule cellules. Il convient ainsi de nettoyer le jeu de données en enlevant les possibles doublets présents
-
-# .Visualisation de l'effet des filtres 
-
-<!-- **Filtre 1 : les doublets** -->
-<!-- ```{r, doublet_dimPlot, results = 'hold', fig.width=18, fig.height=18, fig.fullwidth=TRUE} -->
-<!-- # name of the DF prediction can change, so extract the correct column name. -->
-<!-- DF.name = colnames(merge_allcond_filter@meta.data)[grepl("DF.classification",colnames(merge_allcond_filter@meta.data))] -->
-<!-- # vizualisation -->
-<!-- DimPlot(merge_allcond_filter, split.by = "orig.ident", group.by = DF.name, reduction = "umap", ncol = 3) + NoAxes() -->
-<!-- ``` -->
-
-
-<!-- ### .Vérification de la présence de doublets (objet sur lesquels les autres filtres ont été appliqués) -->
-
-<!-- => à faire au tout tout début du workflow ! avant de merge les fichiers ! -->
-<!-- https://www.youtube.com/watch?v=NqvAS4HgmrE -->
-
-
-<!-- https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html#Predict_doublets -->
-
-<!-- il existe un pourcentage d'erreur d'encapsulation des cellules en fonction du nombre inséré dans la puce. Il est en effet possible que des deux cellules aient été emprisonnées dans le même GEM, leurs transcrits auront donc tous le même barcode et seront considérés comme appartenant à une seule cellules. Il convient ainsi de nettoyer le jeu de données en enlevant les possibles doublets présents. -->
-<!-- On utilise ici le package DoubletFinder mais d'autres outils existent (ex : Scrublet..). Ce détecteur de doublets nécessite une approximation du nombre de doublets attendus. Dans notre cas, on a inséré environ 9000 cellules par puits pour espérer avoir 5000 cellules par puits dans l'analyse. On estime donc le probable taux de doublet à environ 4,6% (voir notice protocole 10X). -->
-<!-- Dans l'exemple, il est indiqué : "Ideally doublet prediction should be run on each sample separately, especially if your different samples have different proportions of celltypes. In this case, the data is subsampled so we have very few cells per sample and all samples are sorted PBMCs so it is okay to run them together." On décide de le faire également sur le fichier avec toutes les conditions. => à discuter ?!?  -->
-
-<!-- On travaille à partir de l'objet contenant tous les filtres.  -->
-
-<!-- ```{r, doublet_dimPlot, results = 'hold', fig.width=18, fig.height=18, fig.fullwidth=TRUE} -->
-<!-- # name of the DF prediction can change, so extract the correct column name. -->
-<!-- DF.name = colnames(obj_nbG_pMT_pRB_rmMT@meta.data)[grepl("DF.classification",colnames(obj_nbG_pMT_pRB_rmMT@meta.data))] -->
-<!-- # vizualisation -->
-<!-- DimPlot(obj_nbG_pMT_pRB_rmMT, split.by = "orig.ident", group.by = DF.name, reduction = "umap", ncol = 3) + NoAxes() -->
-<!-- ``` -->
-
-<!-- ```{r, doubletFinder, results = 'hold', fig.width=18, fig.height=18, fig.fullwidth=TRUE} -->
-
-<!-- # define the expected number of doublet cells -->
-<!-- nExp <- round(ncol(obj_nbG_pMT_pRB_rmMT) * 0.046)  # expect 4,6% doublets -->
-<!-- merge_allcond_filter <- doubletFinder_v3(obj_nbG_pMT_pRB_rmMT, pN = 0.25, pK = 0.09, nExp = nExp, PCs = 1:30) -->
-
-<!-- # save  -->
-<!-- saveRDS(obj_nbG_pMT_pRB_rmMT, file = paste0(dir_output, "data_allcond_doubletfinder.rds")) -->
-<!-- ``` -->
-
-<!-- Il convient ensuite de vérifier si les doublets identifiés par le package sont réellement des doublets. On s'attend à ce que deux cellules contiennent plus de gènes exprimés qu'une seule cellule. Le plot ci-dessous montre que c'est bien le cas pour les doublets détectés. On peut donc se fier à la prédiction de l'outil. -->
-<!-- ```{r, doublet_features, results = 'hold', fig.width=8, fig.height=6} -->
-<!-- VlnPlot(obj_nbG_pMT_pRB_rmMT, features = "nFeature_RNA", group.by = DF.name, pt.size = 0.1) -->
-<!-- ``` -->
-
-<!-- ```{r, filter1} -->
-<!-- # Application du filtre -->
-<!-- obj_nbG_pMT_pRB_rmMT = obj_nbG_pMT_pRB_rmMT[, obj_nbG_pMT_pRB_rmMT@meta.data[, DF.name] == "Singlet"] -->
-<!-- obj_nbG_pMT_pRB_rmMT[["filter_rmDB"]] = "rm Doublet"  -->
-<!-- ``` -->
-
-<!-- ```{r, filter1_tab-recap} -->
-<!-- # Tableau récapitulatif de l'impact du filtre sur le nombre de cellules et de gènes -->
-<!-- tab_cell = as.data.frame(table(obj_nbG_pMT_pRB_rmMT@meta.data$orig.ident)) %>%  -->
-<!--   dplyr::rename(condition = "Var1", filter1_keep = "Freq") %>%  -->
-<!--   dplyr::mutate(category = "cells", .after = "condition") -->
-
-<!-- tab_genes = tab_genes_create(obj = obj_nbG_pMT_pRB_rmMT, name_filter = "filter1_keep") -->
-<!-- tab = full_join(tab_genes, tab_cell, by = c("condition", "category", "filter1_keep")) -->
-<!-- stat_tab = full_join(stat_tab, tab, by = c("condition", "category")) -->
-<!-- ``` -->
-
-<!-- ```{r, mergeallcondfilter1_save} -->
-<!-- saveRDS(merge_allcond_filter, file = paste0(dir_output, "dataset_Seurat_allcond_filter1.rds")) -->
-<!-- ``` -->
-
-
-
-
-
-
-<!-- Travail à partir d'un seul objet Seurat normalisé. -->
-
-<!-- # Réduction de dimensions par PCA -->
-
-<!-- *Calcul de la PCA* -->
-<!-- ```{r} -->
-
-<!-- list_obj = lapply(list_obj, function(x) { RunPCA(object = x,  -->
-<!--                                                  assay = "SCT", -->
-<!--                                                  npcs = 100,  -->
-<!--                                                  # reduction.name = "pca.LogNorm",  -->
-<!--                                                  verbose = TRUE) }) -->
-
-<!-- ``` -->
-<!-- *Visualisation de la PCA en 2D* -->
-<!-- ```{r,  results='hold', fig.width=18, fig.height=10, fig.fullwidth=TRUE} -->
-<!-- for (i in 1:length(list_obj)) { -->
-
-<!--   obj = list_obj[[i]] -->
-<!--   name_obj = names(list_obj)[i] -->
-
-<!--   logNorm_pca_plot = DimPlot(object = obj, group.by = "orig.ident", reduction = "pca") + NoLegend() + ggtitle(name_obj) -->
-<!--     # logNorm_pca_plot = DimPlot(object = obj, group.by = "orig.ident", reduction = "pca.LogNorm") + NoLegend() + ggtitle(name_obj) -->
-<!--   logNorm_pca_split_plot = DimPlot(object = obj, group.by = "orig.ident", split.by = "orig.ident", reduction = "pca") -->
-<!--     # logNorm_pca_split_plot = DimPlot(object = obj, group.by = "orig.ident", split.by = "orig.ident", reduction = "pca.LogNorm") -->
-
-<!--   ggsave(plot = logNorm_pca_plot|logNorm_pca_split_plot, -->
-<!--   filename =  paste0(dir_output, "plot_logNorm_pca_", name_obj, ".png"), -->
-<!--   height = 6, width = 18) -->
-
-<!--   print(logNorm_pca_plot | logNorm_pca_split_plot) -->
-
-<!-- } -->
-<!-- ``` -->
-<!-- *Choix des dimensions à conserver* -->
-
-<!-- On commence par tracer des "elbow plots" qui permettent de déterminer visuellement un nombre de dimensions à conserver (approximatif). Les dimensions sont rangées selon le pourcentage de variance qu'elles expliquent. On souhaite conserver les dimensions qui expliquent le plus la variance. pour cela, on repère lendroit où la courbe fait un coude.  -->
-
-<!-- ```{r, results='hold', fig.width=18, fig.height=10, fig.fullwidth=TRUE} -->
-
-<!-- for (i in 1:length(list_obj)) { -->
-
-<!--   obj = list_obj[[i]] -->
-<!--   name_obj = names(list_obj)[i] -->
-
-<!--   # logNorm_elb_plot = ElbowPlot(object = obj, ndims = 100, reduction = "pca.LogNorm") +  -->
-<!--   #   geom_vline(xintercept = 30, color = "red", size = 1) +  -->
-<!--   #   ggtitle(name_obj) + -->
-<!--   #   theme(plot.background = element_rect(fill = "white")) -->
-
-<!--     logNorm_elb_plot = ElbowPlot(object = obj, ndims = 100, reduction = "pca") +  -->
-<!--     geom_vline(xintercept = 30, color = "red", size = 1) +  -->
-<!--     ggtitle(name_obj) + -->
-<!--     theme(plot.background = element_rect(fill = "white")) -->
-
-<!--   ggsave(plot = logNorm_elb_plot,  -->
-<!--          filename = paste0(dir_output, "plot_logNorm_elb_", name_obj, ".png"),  -->
-<!--          height = 4, width = 8) -->
-
-<!--   print(logNorm_elb_plot) -->
-
-<!-- } -->
-
-<!-- ``` -->
-
-<!-- De façon approximative, on observe que les 30 premières dimensions représentent la majorité de la variance donc on ne s'occupe plus des autres dimensions. Pour valider ce choix, on réalise le test statistique du JackStraw.  -->
-
-<!-- ```{r, results='hold', fig.width=18, fig.height=10, fig.fullwidth=TRUE} -->
-
-<!-- list_obj = lapply(list_obj, function(x) {  -->
-<!--   JackStraw(object = x,  -->
-<!--             assay = "SCT", -->
-<!--             num.replicate = 100, -->
-<!--             #reduction.name = "pca.LogNorm",  -->
-<!--             verbose = TRUE) -->
-<!--   ScoreJackStraw(object = x, -->
-<!--                  assay = "SCT", -->
-<!--                  # reduction.name = "pca.logNorm", -->
-<!--                  dims = 1:50) }) -->
-
-<!-- for (i in 1:length(list_obj)) { -->
-
-<!--   obj = list_obj[[i]] -->
-<!--   name_obj = names(list_obj)[i] -->
-
-<!--   obj = JackStraw(obj, num.replicate = 100, reduction.name = "pca.LogNorm") -->
-
-<!--   JackStrawPlot(obj, dims = 1:2, reduction = "pca.LogNorm") -->
-
-<!--   logNorm_JS_plot = ElbowPlot(object = obj, ndims = 100, reduction = "pca.LogNorm") +  -->
-<!--     geom_vline(xintercept = 30, color = "red", size = 1) +  -->
-<!--     ggtitle(name_obj) + -->
-<!--     theme(plot.background = element_rect(fill = "white")) -->
-
-<!--   ggsave(plot = logNorm_elb_plot,  -->
-<!--          filename = paste0(dir_output, "plot_logNorm_elb_", name_obj, ".png"),  -->
-<!--          height = 4, width = 8) -->
-
-<!--   print(logNorm_elb_plot) -->
-
-<!-- } -->
-
-<!-- ``` -->
-
-<!-- ‘Significant’ PCs will show a strong enrichment of features with low p-values (solid curve above the dashed line). In this case it appears that there is a sharp drop-off in significance after the first 10-12 PCs. -->
-
-<!-- composition de la PCA en heatmap  -->
-<!-- ```{r, results='hold', fig.width=18, fig.height=10, fig.fullwidth=TRUE} -->
-
-<!-- obj = list_obj[[i]] -->
-<!-- DimHeatmap(obj, dims = 1:30, cells = 2000, reduction = "pca.LogNorm", balanced = TRUE) -->
-<!-- ``` -->
-
-
-<!-- # Reduction de dimensions UMAP -->
-
-<!-- ```{r} -->
-<!--   obj = RunUMAP(object = obj, dims = 1:30, reduction =  "pca.LogNorm", reduction.name = "umap.LogNorm", verbose = TRUE) -->
-<!--   logNorm_umap_plot = DimPlot(object = obj, group.by = "orig.ident", reduction = "umap.LogNorm") + NoLegend() -->
-<!--   logNorm_umap_split_plot = DimPlot(object = obj, group.by = "orig.ident", split.by = "orig.ident", reduction = "umap.LogNorm") -->
-<!--   ggsave(plot = logNorm_umap_plot|logNorm_umap_split_plot,  -->
-<!--          filename = paste0(dir_output, "plot_logNorm_umap_", name_obj, ".png"),  -->
-<!--          height = 6, width = 18) -->
-
-<!--   list_obj[[i]] = obj -->
-<!-- ``` -->
-
-<!-- Visualisation des graphiques du fichier pour déterminer les dimensions à conserver.  -->
-<!-- ```{r  results='hold', fig.width=18, fig.height=10, fig.fullwidth=TRUE} -->
-
-<!-- obj = list_obj[["data_allcond_filter_nbG_pMT_pRB_rmMT"]] -->
-
-<!-- # Affichage des graphiques pour le fichier contenant tous les filtres  -->
-<!-- logNorm_pca_plot = DimPlot(object = obj, group.by = "orig.ident", reduction = "pca.LogNorm") +  -->
-<!--   NoLegend() +  -->
-<!--   ggtitle("data_allcond_filter_nbG_pMT_pRB_rmMT") -->
-<!-- logNorm_pca_split_plot = DimPlot(object = obj, group.by = "orig.ident", split.by = "orig.ident", reduction = "pca.LogNorm") -->
-<!-- logNorm_elb_plot = ElbowPlot(object = obj, ndims = 100, reduction = "pca.LogNorm") +  -->
-<!--     geom_vline(xintercept = 30, color = "red", size = 1) +  -->
-<!--     theme(plot.background = element_rect(fill = "white")) -->
-<!-- logNorm_umap_plot = DimPlot(object = obj, group.by = "orig.ident", reduction = "umap.LogNorm") + NoLegend() -->
-<!-- logNorm_umap_split_plot = DimPlot(object = obj, group.by = "orig.ident", split.by = "orig.ident", reduction = "umap.LogNorm") -->
-
-<!-- (logNorm_pca_plot | logNorm_pca_split_plot) / logNorm_elb_plot / (logNorm_umap_plot | logNorm_umap_split_plot) -->
-
-<!-- ``` -->
-
-<!-- ```{r dimensional_reduction_SCT, results='hold', fig.width=18, fig.height=18, fig.fullwidth=TRUE} -->
-
-<!-- DefaultAssay(obj) <- "SCT" # On définit SCT comme l'assay de travail (c'est déjà le cas normalement)  -->
-<!-- obj = RunPCA(object = obj, assay = "SCT", npcs = 100, reduction.name = "pca.sct", verbose = TRUE) -->
-
-<!-- sct_elb_plot = ElbowPlot(obj, ndims = 100, reduction = "pca.sct") + geom_vline(xintercept = 30, color = "red", size = 1) + theme(plot.background = element_rect(fill = "white")) -->
-<!-- sct_pca_plot = DimPlot(object = obj, group.by = "orig.ident", reduction = "pca.sct") -->
-<!-- sct_pca_split_plot = DimPlot(object = obj, group.by = "orig.ident", split.by = "orig.ident", reduction = "pca.sct") -->
-
-<!-- obj = RunUMAP(object = obj, dims = 1:30, reduction =  "pca.sct", reduction.name = "umap.sct", verbose = TRUE) -->
-<!-- sct_umap_plot = DimPlot(object = obj, group.by = "orig.ident", reduction = "umap.sct") -->
-<!-- sct_umap_split_plot = DimPlot(object = obj, group.by = "orig.ident", split.by = "orig.ident", reduction = "umap.sct") -->
-
-<!-- (sct_pca_plot | sct_pca_split_plot) / (sct_elb_plot) / (sct_umap_plot | sct_umap_split_plot) -->
-
-<!-- ``` -->
-
-<!-- ```{r} -->
-<!-- ggsave(plot = sct_pca_plot|sct_pca_split_plot, filename =  paste0(dir_output, "plot_sct_pca_", str_extract(name_obj, pattern = ".+(?=.rds)"), ".png"), height = 6, width = 18) -->
-<!-- ggsave(plot = sct_elb_plot, filename = paste0(dir_output, "plot_sct_elb_", str_extract(name_obj, pattern = ".+(?=.rds)"), ".png"), height = 4, width = 8) -->
-<!-- ggsave(plot = sct_umap_plot|sct_umap_split_plot, filename = paste0(dir_output, "plot_sct_umap_", str_extract(name_obj, pattern = ".+(?=.rds)"), ".png"), height = 6, width = 18) -->
-<!-- ``` -->
-
-
-
-<!-- ## .Visualize cells and features that define the PCA -->
-
-<!-- ```{r, results="hold", fig.width=20, fig.height=20, fig.fullwidth=TRUE} -->
-<!-- VizDimLoadings(obj_filtered, dims = 1:10, reduction = "pca.LogNorm") -->
-<!-- ``` -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Perform non-linear dimensional reduction (UMAP)
+
+```{r, UMAP}
+
+umap_fun = function(obj, assay_name, dim_choice, reduction_pca, reduction_umap) {
+  
+  obj = RunUMAP(object = obj, 
+                assay = name_assay,
+                dims = dim_choice, 
+                reduction =  reduction_pca, 
+                reduction.name = reduction_umap, 
+                verbose = TRUE)
+  
+  umap_plot = DimPlot(object = obj, 
+                      group.by = "orig.ident", 
+                      reduction = reduction_umap) + NoLegend()
+  
+  umap_split_plot = DimPlot(object = obj, 
+                            group.by = "orig.ident", 
+                            split.by = "orig.ident", 
+                            reduction = reduction_umap)
+  
+  results = list(obj = obj,
+                 umap_plot = umap_plot,
+                 umap_split_plot = umap_split_plot)
+  
+  return(results)
+  
+}
+
+umap_seurat_obj_cc_log = umap_fun(seurat_obj_cc_log, "integrated.log", dim_choice, "pca.lognorm", "umap.lognorm")
+seurat_obj_cc_log = umap_seurat_obj_cc_log$obj
+
+umap_seurat_obj_log = umap_fun(seurat_obj_log, "integrated.log", dim_choice, "pca.lognorm", "umap.lognorm")
+seurat_obj_log = umap_seurat_obj_log$obj
+
+umap_seurat_obj_cc_sct = umap_fun(seurat_obj_cc_sct, "integrated.sct", dim_choice, "pca.sct", "umap.sct")
+seurat_obj_cc_sct = umap_seurat_obj_cc_sct$obj
+
+umap_seurat_obj_sct = umap_fun(seurat_obj_sct, "integrated.sct", dim_choice, "pca.sct", "umap.sct")
+seurat_obj_sct = umap_seurat_obj_sct$obj
+
+```
+
+```{r, UMAP plot, fig.width = 22}
+
+umap_seurat_obj_cc_log$umap_plot / umap_seurat_obj_cc_log$umap_split_plot
+# umap_seurat_obj_log$umap_plot | umap_seurat_obj_log$umap_split_plot
+# umap_seurat_obj_cc_sct$umap_plot | umap_seurat_obj_cc_sct$umap_split_plot
+# umap_seurat_obj_sct$umap_plot | umap_seurat_obj_sct$umap_split_plot
+
+```
 
 ```{r, Save outputs}
+
+ggsave(plot = (dim_seurat_obj_cc_log$elb_plot | dim_seurat_obj_cc_log$pca_plot) / dim_seurat_obj_cc_log$pca_split_plot, 
+          filename = paste0(directory_output, ".................svg"),
+          height = 8, width = 12)
+ggsave(plot = (dim_seurat_obj_log$elb_plot | dim_seurat_obj_log$pca_plot) / dim_seurat_obj_log$pca_split_plot, 
+          filename = paste0(directory_output, ".................svg"),
+          height = 8, width = 12)
+ggsave(plot = (dim_seurat_obj_cc_sct$elb_plot | dim_seurat_obj_cc_sct$pca_plot) / dim_seurat_obj_cc_sct$pca_split_plot, 
+          filename = paste0(directory_output, ".................svg"),
+          height = 8, width = 12)
+ggsave(plot = (dim_seurat_obj_sct$elb_plot | dim_seurat_obj_sct$pca_plot) / dim_seurat_obj_sct$pca_split_plot, 
+          filename = paste0(directory_output, ".................svg"),
+          height = 8, width = 12)
+
+
+saveRDS(seurat_obj_cc_log, paste0(directory_output, "integratelog_seurat_obj_qc_norm_ccr_reduc.rds"))
+saveRDS(seurat_obj_log, paste0(directory_output, "integratelog_seurat_obj_qc_norm_reduc.rds")) 
+saveRDS(seurat_obj_cc_sct, paste0(directory_output, "integratesct_seurat_obj_qc_norm_ccr_reduc.rds"))
+saveRDS(seurat_obj_sct, paste0(directory_output, "integratesct_seurat_obj_qc_norm_reduc.rds"))
 
 ```
 
