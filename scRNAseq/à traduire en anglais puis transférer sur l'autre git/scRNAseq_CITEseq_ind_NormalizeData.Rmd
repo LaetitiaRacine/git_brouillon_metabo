@@ -52,6 +52,9 @@ https://www.biostars.org/p/446554/
 https://cran.r-project.org/web/packages/sctransform/sctransform.pdf
 https://rdrr.io/cran/sctransform/man/vst.html
 
+- IV : normaliser les données issues du CITEseq (assay : "ADT)
+https://satijalab.org/seurat/articles/multimodal_vignette.html  
+  
 L'ordre est ici important. Comme indiqué dans l'issue : https://github.com/satijalab/seurat/issues/1679, il convient de faire d'abord la normalisation classique, puis le CellCycleScoring et ansuite d'ajouter le cell cycle scores dans vars.to.regress dans la normalisation SCTransform. On obtient **en sortie** des objets Seurat dont l'influence du cycle cellulaire a été enlevée et avec deux types de normalisation acessibles en changeant l'assay de travail. Pour la suite des "downstream analysis", il est conseillé de travailler avec l'assay "SCT".
 
 ```{r, Working directories and external script}
@@ -81,7 +84,6 @@ list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_obj_qc.rds"))
 number_conditions = length(list_seurat_obj)
 
 ```
-
 
 
 
@@ -175,8 +177,6 @@ list_seurat_obj = lapply(list_seurat_obj, function(x) {
 ```
 
 
-
-
 # Etude de l'influence du cycle cellulaire sur les variations observées 
 
 Pour étudier le cycle cellulaire, les données doivent avoir été préalablement normalisées et mises à l'échelle. On utilise ensuite une liste de gènes (contenue dans la fonction Seurat cc.genes) associés aux phases du cycle cellulaire S et G2M, pour associer un score à chaque cellule les plaçant dans une phase ou l'autre. Les marqueurs sont anticorrélés dans les cellules et celles qui n'en expriment aucun ne sont pas en phase de division ou alors sont en phase G1.  
@@ -194,6 +194,7 @@ cat("There are", length(cc.genes$g2m.genes),
 
 ```
 
+
 ## Attribution d'un score de cycle cellulaire pour les cellules
 ```{r, results = 'hold', fig.width=20, fig.height=6, fig.fullwidth=TRUE}
 
@@ -208,6 +209,7 @@ list_seurat_obj = lapply(list_seurat_obj, function(x) {
 
 ```
 
+
 ## Répartition des cellules sur la base de leur score de cycle cellulaire
 ```{r}
 
@@ -220,7 +222,23 @@ list_seurat_obj = lapply(list_seurat_obj, function(x) {
          verbose = TRUE) 
 })
 
+tab_cellcycle = data.frame()
+
+for (i in 1:number_conditions) {
+  
+  name_cond = names(list_seurat_obj[i])
+  tab = as.data.frame(table(list_seurat_obj[[i]]$Phase)) %>%
+    tidyr::pivot_wider(names_from ="Var1", values_from = "Freq") %>%
+    dplyr::mutate(condition = name_cond)
+  tab_cellcycle = rbind(tab_cellcycle, tab)
+}
+
+tab_cellcycle %>%
+  kable() %>%
+  kable_styling()
+
 ```
+
 
 ## Visualisation du score de cycle cellulaire
 ```{r, fig.width = 14, fig.height = 14, fig.fullwidth=TRUE}
@@ -265,6 +283,7 @@ grid.arrange(grobs = unlist(plot_cc_list, recursive = FALSE),
              top = textGrob("Cell cycle scoring repartition"))
 
 ```
+
 
 ## Déterminer le nombre d'UMI impliqués dans les gènes du cycle cellulaire
 ```{r}
@@ -368,7 +387,7 @@ https://rdrr.io/cran/sctransform/man/vst.html
 center residuals to have mean zero
 
 "Compared to basic Seurat normalisation + scaling + variable gene finding, the SCTransform workflow performs more effective normalization, strongly removing technical effects from the data. This allows more PCs to be selected in the PCA step, as the higher PCs are more likely to represent subtle, but biologically relevant, sources of heterogeneity instead of variation in sequencing depth."
-```{r}
+```{r, Normalize RNA SCT}
 
 # On ne peut pas faire les deux normalisations dans le même objets car la deuxième efface la première
 
@@ -381,7 +400,7 @@ list_seurat_obj_cc = lapply(list_seurat_obj, function(x) {
               method = "glmGamPoi", 
               do.center = TRUE, 
               do.scale = FALSE,
-              variable.features.n = 2000,
+              variable.features.n = 3000,
               vars.to.regress = c("S.Score", "G2M.Score"),
               min_cells = 1,
               ncells = NULL,
@@ -397,12 +416,35 @@ list_seurat_obj = lapply(list_seurat_obj, function(x) {
               method = "glmGamPoi", 
               do.center = TRUE, 
               do.scale = FALSE,
-              variable.features.n = 2000,
+              variable.features.n = 3000,
               vars.to.regress = NULL,
               min_cells = 1,
               ncells = NULL,
               verbose = FALSE)
   
+})
+
+```
+
+
+# Normalisation de l'assay ADT avec LogNormalisation
+
+Normalization method CLR applies a centered log ratio transformation, with parameter margin = 2 the normalisation is performing across cells.
+
+```{r, Normalize ADT}
+
+list_seurat_obj = lapply(list_seurat_obj, function(x) {
+  NormalizeData(object = x, 
+                normalization.method = "CLR",
+                margin = 2,
+                assay = "ADT")
+})
+
+list_seurat_obj_cc = lapply(list_seurat_obj_cc, function(x) {
+  NormalizeData(object = x, 
+                normalization.method = "CLR",
+                margin = 2,
+                assay = "ADT")
 })
 
 ```

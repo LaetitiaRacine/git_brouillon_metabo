@@ -101,6 +101,9 @@ integration_fun = function(list_obj, number_conditions) {
 integ_seurat_obj_cc_log = integration_fun(list_seurat_obj_cc, number_conditions)
 integ_seurat_obj_log = integration_fun(list_seurat_obj, number_conditions)
 
+saveRDS(integ_seurat_obj_cc_log, paste0(directory_output, "integratelog_seurat_obj_qc_norm_ccr.rds"))
+saveRDS(integ_seurat_obj_log, paste0(directory_output, "integratelog_seurat_obj_qc_norm.rds"))
+
 ```
 
 ```{r, Integration based on SCTransform normalization}

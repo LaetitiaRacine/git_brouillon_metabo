@@ -57,6 +57,7 @@ seurat_obj_log = readRDS(paste0(dir, "/", "integratelog_seurat_obj_qc_norm.rds")
 
 ```
 
+
 # Perform linear dimensional reduction and determine the "dimensionality" (PCA)
 
 https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1
@@ -209,6 +210,18 @@ umap_seurat_obj_cc_log$umap_plot / umap_seurat_obj_cc_log$umap_split_plot
 # umap_seurat_obj_sct$umap_plot | umap_seurat_obj_sct$umap_split_plot
 
 ```
+
+
+# Choose optimal object for downstream analysis and matrice extraction
+
+=> normalisation SCT dans régression sur le cycle cellulaire 
+
+```{r}
+
+
+
+```
+
 
 ```{r, Save outputs}
 

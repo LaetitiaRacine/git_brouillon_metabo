@@ -435,31 +435,33 @@ summary_gene_tab = dplyr::bind_rows(list_temp_summary_gene, .id = "condition")
 
 ```{r, Save outputs}
 
-# 
-all_gene_tab
-summary_gene_tab
-summary_cell_tab
+# Save plots
+ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, 
+                           nrow = 2, top = textGrob("nFeature_RNA")),
+       filename = paste0(directory_output, "plot_feature_filter.png"),
+       width = 16, height = 12)
 
-
-
-
-
-ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, nrow = 2, top = textGrob("nFeature_RNA")),
-filename = paste0(directory_output, "plot_feature_filter.png"),
-width = 16, height = 12)
-
-ggsave(plot = grid.arrange(grobs = unlist(plot_percentage_graphs, recursive = FALSE), 
-                           ncol = 6, top = textGrob("Mitochondrial and ribosomal RNA percentages")),
-       filename = paste0(directory_output, "plot_percentMTRB_filter.png"),
-       width = 24, height = 24)
+ggsave(plot= grid.arrange(
+  grobs= unlist(plot_percentage_graphs, recursive=F),
+  ncol = 6, top = textGrob("Mitochondrial and ribosomal RNA percentages")),
+  filename= paste0(directory_output, "plot_percentMTRB_filter.png"),
+  width= 24, height= 24)
 
 # Save Seurat object with all filters
-saveRDS(list_seurat_obj, file = paste0(directory_output, "list_seurat_obj_qc.rds"))
+saveRDS(object = filtered_list_seurat_obj, 
+        file = paste0(directory_output, "list_seurat_obj_qc.rds"))
+saveRDS(object = list_seurat_obj_filter, 
+        file = paste0(directory_output, "list_seurat_obj_qc_each_filter.rds"))
 
-write.csv2(filter_tab, file = paste0(directory_output, "filter_tab_seurat_obj.csv"))
-write.csv2(summary_tab, file = paste0(directory_output, "summary_tab_seurat_obj.csv"))
-
-# saveRDS(list_seurat_obj_obj, file = paste0(directory_output, "list_seurat_obj_each_filter_qc.rds"))
+# Save tabs
+write.csv2(x = filter_tab, 
+           file = paste0(directory_output, "filter_tab_seurat_obj.csv"))
+write.csv2(x = summary_cell_tab, 
+           file = paste0(directory_output, "summary_cell_tab_seurat_obj.csv"))
+write.csv2(x = summary_gene_tab, 
+           file = paste0(directory_output, "summary_genel_tab_seurat_obj.csv"))
+write.csv2(x = all_gene_tab, 
+           file = paste0(directory_output, "all_gene_tab_seurat_obj.csv"))
 
 ```
 
