@@ -347,87 +347,6 @@ filter_tab %>%
 
 D'autres filtres pourraient être appliqués sur le jeu de données. Par exemple, on pourrait appliquer un filtre sur le nombre d'UMI nécessaire par gène pour qu'il ne soit pas considéré comme du bruit de fond, ou alors sur le nombre de cellules devant exprimer le gène pour qu'on le conserve, ou encore écarter les gènes qui monopolisent les reads... Avant d'aller plus loin de ce côté, on continue l'analyse des données pour voir ce qu'il est pertinent d'appliquer ou non. Cela évite d'enlever trop d'informations dès le début. Il sera toujours possible d'appliquer ce genre de filtre par la suite si on se rend compte que les données sont biaisées.
 
-## Visualisation de l'effet des filtres
-
-On fait une Normalisation rapide et une PCA pour visuliser les effets des filtres mais ce n'est pas enregistré pour la suite.
-
-```{r, Normalize and Reduce}
-
-list_obj = lapply(list_seurat_obj_filter, function(x) {
-  lapply(x, function(y) {
-    y = NormalizeData(y, normalization.method = "LogNormalize", scale.factor = 10000)
-    y = FindVariableFeatures(y, selection.method = "vst", nfeatures = 2000)
-    y = ScaleData(y)
-    y = RunPCA(y, features = VariableFeatures(y), npcs = 50)
-    y = RunUMAP(y, reduction = "pca", dims = 1:30)
-  })
-})
-
-```
-
-```{r, Plots Dim per filter, fig.width = 20, fig.height = 28}
-
-dim_graphs = list()
-
-for (i in 1:length(list_obj)) {
-  
-  name_cond = names(list_obj[i])
-  cond_obj = list_obj[[i]]
-  p1 = DimPlot(cond_obj$seurat_obj, reduction = "umap") + ggtitle(paste0(name_cond, " - Before Filter")) + NoLegend()
-  p2 = DimPlot(cond_obj$seurat_obj_nbG, reduction = "umap") + ggtitle(paste0(name_cond," - After Filter nbg")) + NoLegend()
-  p3 = DimPlot(cond_obj$seurat_obj_nbG_pMT, reduction = "umap") + ggtitle(paste0(name_cond," - After Filter pMT")) + NoLegend()
-  p4 = DimPlot(cond_obj$seurat_obj_nbG_pMT_pRB, reduction = "umap") + ggtitle(paste0(name_cond," - After Filter pRB")) + NoLegend()
-  p5 = DimPlot(cond_obj$seurat_obj_nbG_pMT_pRB_rmMT, reduction = "umap") + ggtitle(paste0(name_cond," - After Filter rmMT")) + NoLegend()
-  dim_graphs[[i]] = list(p1, p2, p3, p4, p5)
-  
-}
-
-grid.arrange(grobs = unlist(dim_graphs, recursive = FALSE),
-             ncol = 5)
-
-```
-
-```{r, Plots Features per filter, fig.width = 20, fig.height = 28}
-
-features_graphs = list()
-
-for (i in 1:length(list_obj)) {
-  
-  name_cond = names(list_obj[i])
-  cond_obj = list_obj[[i]]
-  
-  p1 = FeaturePlot(cond_obj$seurat_obj, "nFeature_RNA", reduction = "umap")  + 
-    ggtitle(paste0(name_cond, " - nFeatureRNA", "\n", "- Before Filter nbg"))
-  
-  p2 = FeaturePlot(cond_obj$seurat_obj_nbG, "nFeature_RNA", reduction = "umap")  + 
-    ggtitle(paste0(name_cond, " - nFeatureRNA", "\n", "- After Filter nbg"))
-  
-  p3 = FeaturePlot(cond_obj$seurat_obj_nbG, "percent.mt", reduction = "umap", 
-                   min.cutoff = 0, max.cutoff = 80) + 
-    ggtitle(paste0(name_cond, " - percent.mt", "\n", "- Before Filter pMT")) 
-  
-  p4 = FeaturePlot(cond_obj$seurat_obj_nbG_pMT, "percent.mt", 
-                   reduction = "umap", min.cutoff = 0, max.cutoff = 80) + 
-    ggtitle(paste0(name_cond," - percent.mt", "\n", "- After Filter pMT"))
-  
-  p5 = FeaturePlot(cond_obj$seurat_obj_nbG_pMT, 
-                   "percent.ribo", reduction = "umap") + 
-    ggtitle(paste0(name_cond, " - percent.ribo", "\n", "- Before Filter pRB"))
-  
-  p6 = FeaturePlot(cond_obj$seurat_obj_nbG_pMT_pRB, "percent.ribo", 
-                   reduction = "umap") + 
-    ggtitle(paste0(name_cond, " - percent.ribo", "\n", "- After Filter pRB"))
-
-  features_graphs[[name_cond]] = list(p1, p2, p3, p4, p5, p6)
-  
-}
-
-grid.arrange(grobs = unlist(features_graphs, recursive = FALSE),
-             ncol = 6)
-
-```
-
-
 ## Tableau des caractéristiques des cellules conservées
 
 ```{r, Cells parameters}
@@ -521,8 +440,6 @@ all_gene_tab
 summary_gene_tab
 summary_cell_tab
 
-grid.arrange(grobs = unlist(features_graphs, recursive = FALSE),
-             ncol = 6)
 
 
 
