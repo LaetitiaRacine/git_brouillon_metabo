@@ -32,11 +32,13 @@ Ce code **permet de** :
 - mettre les matrices de count au format Seurat Object pour chaque condition     
 - enregistrer les objets Seurat créés  
   
-Il s'est **inspiré** de : https://satijalab.org/seurat/articles/multimodal_vignette.html    
+Il s'est **inspiré** de : 
+- https://satijalab.org/seurat/articles/multimodal_vignette.html    
+- https://github.com/satijalab/seurat/issues/2362
     
 On obtient **en sortie** un objet Seurat par condition. Un objet Seurat sert de conteneurs qui regroupe à la fois les données (comme les matrices de counts) mais aussi les analyses (comme les PCA ou clustering) d'un même *single-cell dataset*. Il contient plusieurs *Assays* selon le type de données : ARN, Protéine (ADT), Normalisation... On retrouve la matrice de *counts* pour chaque assay indiquant les features (= gènes de la base de données GRCh38) en ligne et les cellules identifiées par leur barcode en colonnes. Les commandes principales pour manipuler un objet Seurat sont indiquées dans la vignette : https://satijalab.org/seurat/articles/essential_commands.html.  
   
-```{r, Working directories and external script}
+```{r, Working directories and external script, warning=F, message=F}
 
 # Load working directories
 directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
@@ -47,8 +49,10 @@ directory_bin = paste0(directory, "bin/")
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
 dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_ind_CreateSeuratObject/"))
-dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_ind_CreateSeuratObject/", current_date))
-directory_output = paste0(directory_exp, "scRNAseq_CITEseq_ind_CreateSeuratObject/", current_date, "/")
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_ind_CreateSeuratObject/", 
+                         current_date))
+directory_output = paste0(directory_exp, "scRNAseq_CITEseq_ind_CreateSeuratObject/", 
+                          current_date, "/")
 
 # Load external script with functions and constantes 
 source(file = paste0(directory_bin, "functions_constantes.R"))
@@ -63,7 +67,8 @@ barcodes_list = list.files(path = directory_data, pattern = "barcodes")
 features_list = list.files(path = directory_data, pattern = "features")
 
 # Extract number and names of conditions
-if (length(matrix_list) == length(barcodes_list) & length(barcodes_list) == length(features_list)) {
+if (length(matrix_list) == length(barcodes_list) & 
+    length(barcodes_list) == length(features_list)) {
   number_condition = length(matrix_list)
 } else { print("Files missing, check data folder") }
 
@@ -81,7 +86,7 @@ Pour que le gène (assay = RNA) puisse être différencié facilement de la prot
 
 create_seurat_ADT_RNA = function(matrix_file, barcode_file, feature_file) {
   
-  # Create a global large dgCMatrix with genes, ADT (CITEseq) and HTO (multiplexing) information
+  # Create a global large dgCMatrix with genes, ADT (CITEseq) and HTO (multiplexing) info
   matrix = as.sparse(ReadMtx(
     mtx = paste0(directory_data, matrix_file), # detected RNA
     cells = paste0(directory_data, barcode_file), # detected cells list
@@ -89,20 +94,22 @@ create_seurat_ADT_RNA = function(matrix_file, barcode_file, feature_file) {
     )) 
   
   # Separate matrix into one gene matrix and one ADT matrix
-  features = read.csv(paste0(directory_data, feature_file), sep = "\t", header = FALSE, col.names = c("id_gene", "name", "analysis"))
-  features_gene = features %>% dplyr::filter(analysis == "Gene Expression")
-  features_antibody = features %>% dplyr::filter(analysis == "Antibody Capture")
   tab_matrix = as.data.frame(matrix)
-  tab_antibody = tab_matrix %>% dplyr::filter(row.names(tab_matrix) %in% features_antibody$name)
-  tab_genes = tab_matrix %>% dplyr::filter(row.names(tab_matrix) %in% features_gene$name)
-  
+  tab_antibody = tab_matrix %>%
+    dplyr::filter(row.names(tab_matrix) %in% c("CD34.1", "CD133"))
+  tab_genes = tab_matrix %>%
+    dplyr::filter(!row.names(tab_matrix) %in% c("CD34.1", "CD133", "CMO301", "CMO302"))
+
   # Create seurat object with gene matrix count in assay RNA
   seurat_obj = CreateSeuratObject(counts = tab_genes, assay = "RNA")
   # Create a new assay to store ADT matrix count
   adt_assay = CreateAssayObject(counts = tab_antibody)
   # Add the new assay into the original seurat object
   seurat_obj[["ADT"]] = adt_assay
-
+  # Add key for features of each assay
+  Key(seurat_obj[["RNA"]]) = "rna_"
+  Key(seurat_obj[["ADT"]]) = "cite_"
+  
   return(seurat_obj)
   
 }
@@ -114,10 +121,13 @@ create_seurat_ADT_RNA = function(matrix_file, barcode_file, feature_file) {
 # Call function to create objects and store in a list
 for (i in 1:number_condition) {
 
-  list_seurat_obj[list_condition[i]] = create_seurat_ADT_RNA(
-    matrix_file = str_subset(string = matrix_list, pattern = paste0(list_condition[i], "_")),
-    barcode_file =  str_subset(string = barcodes_list, pattern = paste0(list_condition[i], "_")),
-    feature_file = str_subset(string = features_list, pattern = paste0(list_condition[i], "_"))
+  list_seurat_obj[[list_condition[i]]] = create_seurat_ADT_RNA(
+    matrix_file = str_subset(string = matrix_list, 
+                             pattern = paste0(list_condition[i], "_")),
+    barcode_file =  str_subset(string = barcodes_list, 
+                               pattern = paste0(list_condition[i], "_")),
+    feature_file = str_subset(string = features_list, 
+                              pattern = paste0(list_condition[i], "_"))
   )
 
   # Update orig.ident with the condition
@@ -135,14 +145,19 @@ for (i in 1:number_condition) {
 # Check each objects : number of assays and CITEseq antibody detected
 for (i in 1:number_condition) {
   
-  cat(names(list_seurat_obj)[i], "- Assays :",
-      Assays(list_seurat_obj[[i]]), " - CITEseq :",
-      rownames(list_seurat_obj[[i]][["ADT"]]), "\n")
-  
+  cat(names(list_seurat_obj)[i], " : \n",
+      "- Assays :", Assays(list_seurat_obj[[i]]), "\n",
+      "- CITEseq :", rownames(list_seurat_obj[[i]][["ADT"]]), "\n",
+      "- Nb cells :", ncol(list_seurat_obj[[i]]), "\n",
+      "- Nb features RNA :", nrow(list_seurat_obj[[i]][["RNA"]]), "\n",
+      "- Nb features ADT :", nrow(list_seurat_obj[[i]][["ADT"]]), "\n")
 }
 
 ```
   
+When creating seurat objects, the raw counts are stored in both the counts and data slot at the beginning. 
+Then, the NormalizeData() function will work off of the counts slots and overwrite the data slot when the counts slot will still contain the raw data.
+
 ```{r, Save outputs}
 
 saveRDS(list_seurat_obj, file = paste0(directory_output, "list_seurat_obj.rds"))
