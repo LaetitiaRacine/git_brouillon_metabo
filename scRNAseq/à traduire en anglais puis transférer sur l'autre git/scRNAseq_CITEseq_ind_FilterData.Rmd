@@ -294,7 +294,7 @@ for (i in 1:number_conditions) {
 ```{r, Filter_summary}
 
 extract_nbgene_detected = function(obj) {
-  matrix = as.data.frame(obj@assays$RNA@counts)
+  matrix = as.data.frame(obj@assays$RNA@counts) # work on raw data stored in counts slot
   sum_UMI = as.data.frame(rowSums(matrix))
   detected_genes = sum_UMI %>% dplyr::filter(`rowSums(matrix)` != 0)
   return(nrow(detected_genes))
@@ -431,9 +431,90 @@ summary_gene_tab = dplyr::bind_rows(list_temp_summary_gene, .id = "condition")
 ```
 
 
+# Batch effect : présent ou non ?
+
+On commence par s'intéresser aux contrôles.
+
+```{r, Batch effect identification CTRL}
+
+# Extract the two controls from the list of seurat object
+CTRL_manip1 = list_seurat_obj[["CTRL"]]
+CTRL_manip2 = list_seurat_obj[["CTRL2"]]
+
+# Merge both control objects
+CTRL_merged = merge(x = CTRL_manip1, 
+                    y = CTRL_manip2, 
+                    add.cell.ids = c("CTRL1", "CTRL2"))
+
+# Visualize control objects in UMAP and PCA
+CTRL_merged = NormalizeData(CTRL_merged)
+CTRL_merged = FindVariableFeatures(CTRL_merged)
+CTRL_merged = ScaleData(CTRL_merged)
+CTRL_merged = RunPCA(CTRL_merged, npcs = 30)
+CTRL_merged = RunUMAP(CTRL_merged, reduction = "pca", dims = 1:30)
+
+pca_split = DimPlot(object = CTRL_merged, group.by = "orig.ident",
+                     split.by = "orig.ident", reduction = "pca") + NoLegend()
+pca_batch = DimPlot(object = CTRL_merged, group.by = "orig.ident",
+                     reduction = "pca")
+
+umap_batch = DimPlot(object = CTRL_merged, group.by = "orig.ident", 
+                    reduction = "umap")
+umap_split = DimPlot(object = CTRL_merged, group.by = "orig.ident",
+                    split.by = "orig.ident", reduction = "umap") + NoLegend()
+
+(pca_batch | pca_split) / (umap_batch | umap_split)
+
+```
+
+En PCA, la superposition n'est pas parfaite mais semble raisonnable. Par contre en umap, on a une grande différence entre les contrôles des deux manips.  
+On regade ce que ça donne lorsqu'on mélange toutes les conditions.  
+
+```{r, Batch effect identification, fig.width = 18, fig.height = 12}
+
+# 
+all_merged = merge(x = list_seurat_obj[[1]], 
+                    y = c(list_seurat_obj[[2]], 
+                          list_seurat_obj[[3]],
+                          list_seurat_obj[[4]],
+                          list_seurat_obj[[5]],
+                          list_seurat_obj[[6]],
+                          list_seurat_obj[[7]],
+                          list_seurat_obj[[8]],
+                          list_seurat_obj[[9]],
+                          list_seurat_obj[[10]]))
+all_merged = NormalizeData(all_merged)
+all_merged = FindVariableFeatures(all_merged)
+all_merged = ScaleData(all_merged)
+all_merged = RunPCA(all_merged, npcs = 30)
+all_merged = RunUMAP(all_merged, reduction = "pca", dims = 1:30)
+
+pca_split = DimPlot(object = all_merged, group.by = "orig.ident",
+                     split.by = "orig.ident", reduction = "pca") + NoLegend()
+pca_batch = DimPlot(object = all_merged, group.by = "orig.ident",
+                     reduction = "pca")
+
+umap_batch = DimPlot(object = all_merged, group.by = "orig.ident", 
+                     reduction = "umap", cols = c("purple", "yellow", "orange",
+                    "red", "green", "pink", "grey", "blue", "darkblue", "black"))
+
+umap_split = DimPlot(object = all_merged, group.by = "orig.ident",
+                    split.by = "orig.ident", reduction = "umap",
+                    cols = c("purple", "yellow", "orange", "red", 
+                    "green", "pink", "grey", "blue", "darkblue", "black")) + 
+  NoLegend()
+
+pca_batch / pca_split
+umap_batch / umap_split
+
+```
+
+Les deux contrôles ne se superposent pas comme on le voudrait, il faut faire une petite correction du batch effect (on fera une intégration des datasets après la normalisation). 
+
+
 # Conclusion 
 
-```{r, Save outputs}
+```{r, Save outputs, results="hide"}
 
 # Save plots
 ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, 
@@ -442,10 +523,14 @@ ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5,
        width = 16, height = 12)
 
 ggsave(plot= grid.arrange(
-  grobs= unlist(plot_percentage_graphs, recursive=F),
+  grobs = unlist(plot_percentage_graphs, recursive=F),
   ncol = 6, top = textGrob("Mitochondrial and ribosomal RNA percentages")),
-  filename= paste0(directory_output, "plot_percentMTRB_filter.png"),
-  width= 24, height= 24)
+  filename = paste0(directory_output, "plot_percentMTRB_filter.png"),
+  width = 24, height = 24)
+
+ggsave(plot = umap_batch | umap_split,
+       filename = paste0(directory_output, "plot_batch_effect.png"),
+       width = 12, height = 10)
 
 # Save Seurat object with all filters
 saveRDS(object = filtered_list_seurat_obj, 

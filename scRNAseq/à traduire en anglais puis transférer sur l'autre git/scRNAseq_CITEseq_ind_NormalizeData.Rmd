@@ -374,7 +374,7 @@ Possibilité de régresser les données ou non => la régression se fait au nive
 
 # Normalisation de l'assay RNA avec SCTransform
 
-La fonction SCTransform regroupe en une seule ligne des filtres sur les données, une normalisation, l'extraction des 2000 gènes les plus variables et le scaling. 
+La fonction SCTransform regroupe en une seule ligne des filtres sur les données, une normalisation, l'extraction des 3000 gènes les plus variables et le scaling. 
 On utilise la méthode "glmGamPoi" dans la fonction SCTransform pour améliorer la vitesse de calcul. Les résultats de la normalisation sont ensuite stockés dans l'assay "SCT".  
 *Filtres appliqués*: Attention, les paramètres de filtre par défaut sont "cachés" dans la fonction SCTransform. 
 - Filter out cells which have less than this many genes expressed [200] => notre filtre est plus restrictif (1000 gènes) donc pas d'impact
@@ -389,13 +389,12 @@ center residuals to have mean zero
 "Compared to basic Seurat normalisation + scaling + variable gene finding, the SCTransform workflow performs more effective normalization, strongly removing technical effects from the data. This allows more PCs to be selected in the PCA step, as the higher PCs are more likely to represent subtle, but biologically relevant, sources of heterogeneity instead of variation in sequencing depth."
 ```{r, Normalize RNA SCT}
 
-# On ne peut pas faire les deux normalisations dans le même objets car la deuxième efface la première
+# On ne peut pas faire les deux normalisations dans le même objet car la deuxième efface la première
 
 # SC normalization with cell cycle regression
 list_seurat_obj_cc = lapply(list_seurat_obj, function(x) { 
   SCTransform(object = x, 
               assay = "RNA", 
-              # new.assay.name = "SCT_with_ccreg", 
               new.assay.name = "SCT",
               method = "glmGamPoi", 
               do.center = TRUE, 
@@ -411,7 +410,6 @@ list_seurat_obj_cc = lapply(list_seurat_obj, function(x) {
 list_seurat_obj = lapply(list_seurat_obj, function(x) { 
   SCTransform(object = x, 
               assay = "RNA", 
-              # new.assay.name = "SCT_without_ccreg", 
               new.assay.name = "SCT",
               method = "glmGamPoi", 
               do.center = TRUE, 
