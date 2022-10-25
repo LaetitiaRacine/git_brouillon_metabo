@@ -1,0 +1,255 @@
+---
+title: "scRNAseq_CITEseq_integ_ReductionDimension"
+author: "Laëtitia Racine"
+date: "2022-10-03"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "show"
+    toc: false
+    theme: journal
+---
+
+```{r, Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, Dependencies, message=F, warning=F}
+
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+
+```
+
+https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1
+https://satijalab.org/seurat/articles/dim_reduction_vignette.html
+
+```{r, Working directories and external script}
+
+directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory_exp = paste0(directory, "exp/")
+directory_data = paste0(directory, "data/scRNAseq/")
+directory_bin = paste0(directory, "bin/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_integ_ReductionDimensions/"))
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_integ_ReductionDimensions/", current_date))
+directory_output = paste0(directory_exp, "scRNAseq_CITEseq_integ_ReductionDimensions/", current_date, "/")
+
+# Load external script with functions and constantes 
+source(file = paste0(directory_bin, "functions_constantes.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory_exp, "scRNAseq_CITEseq_integ_IntegrateConditions/"))
+# Object with cc regression and log integration
+seurat_obj_cc_log = readRDS(paste0(dir, "/", "integratelog_seurat_obj_qc_norm_ccr.rds"))
+# Object with cc regression and sct integration
+# seurat_obj_cc_sct = readRDS(paste0(dir, "/", "integratesct_seurat_obj_qc_norm_ccr.rds"))
+# Object without cc regression and log integration
+seurat_obj_log = readRDS(paste0(dir, "/", "integratelog_seurat_obj_qc_norm.rds"))
+# Object without cc regression and sct integration
+# seurat_obj_sct = readRDS(paste0(dir, "/", "integratesct_seurat_obj_qc_norm.rds"))
+
+```
+
+
+# Perform linear dimensional reduction and determine the "dimensionality" (PCA)
+
+https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1
+Jackstraw method is time consuming for large dataset. We choose to use only the heuristic elbow plot method to determine the dimensionality.
+On commence par tracer des "elbow plots" qui permettent de déterminer visuellement un nombre de dimensions à conserver (approximatif). Les dimensions sont rangées selon le pourcentage de variance qu'elles expliquent. On souhaite conserver les dimensions qui expliquent le plus la variance. Pour cela, on repère l'endroit où la courbe fait un coude.
+De façon approximative, on observe que les 30 premières dimensions représentent la majorité de la variance donc on ne s'occupe plus des autres dimensions. 
+
+```{r, PCA and dimensionality}
+
+dim_choice_fun = function(obj, name_assay, reduction_pca) {
+  
+  # Scale needed after integration
+  obj = ScaleData(object = obj,
+                  assay = name_assay,
+                  split.by = "orig.ident",
+                  verbose = TRUE)
+  # PCA calculation
+  obj = RunPCA(object = obj,
+               assay = name_assay,
+               npcs = 100,
+               reduction.name = reduction_pca,
+               verbose = TRUE)
+  
+  # Plots
+  pca_plot = DimPlot(object = obj, 
+                     group.by = "orig.ident", 
+                     reduction = reduction_pca) + NoLegend() 
+  
+  pca_split_plot = DimPlot(object = obj, 
+                           group.by = "orig.ident", 
+                           split.by = "orig.ident", 
+                           reduction = reduction_pca)
+   
+  elb_plot = ElbowPlot(object = obj, ndims = 100, reduction = reduction_pca) +
+    geom_vline(xintercept = 10, color = "red", size = 1) +
+    geom_vline(xintercept = 20, color = "red", size = 1) +
+    geom_vline(xintercept = 30, color = "red", size = 1) +
+    geom_vline(xintercept = 40, color = "red", size = 1) +
+    theme(plot.background = element_rect(fill = "white"))
+  
+  pca_htmp = DimHeatmap(object = obj,
+                       dims = 1:30,
+                       reduction = reduction_pca,
+                       balanced = TRUE)
+
+  pca_dim = VizDimLoadings(object = obj,
+                           dims = 1:30, 
+                           reduction = reduction_pca)
+
+  # Outputs
+  results = list(obj = obj,
+                 pca_plot = pca_plot,
+                 pca_split_plot = pca_split_plot,
+                 elb_plot = elb_plot,
+                 pca_htmp = pca_htmp,
+                 pca_dim = pca_dim)
+  return(results)
+  
+}
+
+dim_seurat_obj_cc_log = dim_choice_fun(seurat_obj_cc_log, "integrated.log", "pca.lognorm")
+seurat_obj_cc_log = dim_seurat_obj_cc_log$obj
+
+# dim_seurat_obj_log = dim_choice_fun(seurat_obj_log, "integrated.log", "pca.lognorm")
+# seurat_obj_log = dim_seurat_obj_log$obj
+# 
+# dim_seurat_obj_cc_sct = dim_choice_fun(seurat_obj_cc_sct, "integrated.log", "pca.lognorm")
+# seurat_obj_cc_sct = dim_seurat_obj_cc_sct$obj
+# 
+# dim_seurat_obj_sct = dim_choice_fun(seurat_obj_sct, "integrated.log", "pca.lognorm")
+# seurat_obj_sct = dim_seurat_obj_sct$obj
+
+```
+
+```{r, PCA plot1, fig.width = 20}
+
+(dim_seurat_obj_cc_log$elb_plot | dim_seurat_obj_cc_log$pca_plot) / dim_seurat_obj_cc_log$pca_split_plot
+# (dim_seurat_obj_log$elb_plot | dim_seurat_obj_log$pca_plot | dim_seurat_obj_log$pca_split_plot)
+# (dim_seurat_obj_cc_sct$elb_plot | dim_seurat_obj_cc_sct$pca_plot | dim_seurat_obj_cc_sct$pca_split_plot)
+# (dim_seurat_obj_sct$elb_plot | dim_seurat_obj_sct$pca_plot | dim_seurat_obj_sct$pca_split_plot)
+
+```
+
+```{r, PCA plot2, fig.height = 20, fig.width = 20}
+
+dim_seurat_obj_cc_log$pca_htmp / dim_seurat_obj_cc_log$pca_dim
+# dim_seurat_obj_log$pca_htmp / dim_seurat_obj_log$pca_dim
+# dim_seurat_obj_cc_sct$pca_htmp / dim_seurat_obj_cc_sct$pca_dim
+# dim_seurat_obj_sct$pca_htmp / dim_seurat_obj_sct$pca_dim
+
+```
+
+```{r, Dimension choice}
+
+print("We chose dimensions 1 --> 30 for downstream analysis.")
+dim_choice = c(1:30)
+
+```
+
+
+# Perform non-linear dimensional reduction (UMAP)
+
+```{r, UMAP}
+
+umap_fun = function(obj, assay_name, dim_choice, reduction_pca, reduction_umap) {
+  
+  obj = RunUMAP(object = obj, 
+                assay = name_assay,
+                dims = dim_choice, 
+                reduction =  reduction_pca, 
+                reduction.name = reduction_umap, 
+                verbose = TRUE)
+  
+  umap_plot = DimPlot(object = obj, 
+                      group.by = "orig.ident", 
+                      reduction = reduction_umap) + NoLegend()
+  
+  umap_split_plot = DimPlot(object = obj, 
+                            group.by = "orig.ident", 
+                            split.by = "orig.ident", 
+                            reduction = reduction_umap)
+  
+  results = list(obj = obj,
+                 umap_plot = umap_plot,
+                 umap_split_plot = umap_split_plot)
+  
+  return(results)
+  
+}
+
+umap_seurat_obj_cc_log = umap_fun(seurat_obj_cc_log, "integrated.log", dim_choice, "pca.lognorm", "umap.lognorm")
+seurat_obj_cc_log = umap_seurat_obj_cc_log$obj
+
+umap_seurat_obj_log = umap_fun(seurat_obj_log, "integrated.log", dim_choice, "pca.lognorm", "umap.lognorm")
+seurat_obj_log = umap_seurat_obj_log$obj
+
+umap_seurat_obj_cc_sct = umap_fun(seurat_obj_cc_sct, "integrated.sct", dim_choice, "pca.sct", "umap.sct")
+seurat_obj_cc_sct = umap_seurat_obj_cc_sct$obj
+
+umap_seurat_obj_sct = umap_fun(seurat_obj_sct, "integrated.sct", dim_choice, "pca.sct", "umap.sct")
+seurat_obj_sct = umap_seurat_obj_sct$obj
+
+```
+
+```{r, UMAP plot, fig.width = 22}
+
+umap_seurat_obj_cc_log$umap_plot / umap_seurat_obj_cc_log$umap_split_plot
+# umap_seurat_obj_log$umap_plot | umap_seurat_obj_log$umap_split_plot
+# umap_seurat_obj_cc_sct$umap_plot | umap_seurat_obj_cc_sct$umap_split_plot
+# umap_seurat_obj_sct$umap_plot | umap_seurat_obj_sct$umap_split_plot
+
+```
+
+
+# Choose optimal object for downstream analysis and matrice extraction
+
+=> normalisation SCT dans régression sur le cycle cellulaire 
+
+```{r}
+
+
+
+```
+
+
+```{r, Save outputs}
+
+ggsave(plot = (dim_seurat_obj_cc_log$elb_plot | dim_seurat_obj_cc_log$pca_plot) / dim_seurat_obj_cc_log$pca_split_plot, 
+          filename = paste0(directory_output, ".................svg"),
+          height = 8, width = 12)
+ggsave(plot = (dim_seurat_obj_log$elb_plot | dim_seurat_obj_log$pca_plot) / dim_seurat_obj_log$pca_split_plot, 
+          filename = paste0(directory_output, ".................svg"),
+          height = 8, width = 12)
+ggsave(plot = (dim_seurat_obj_cc_sct$elb_plot | dim_seurat_obj_cc_sct$pca_plot) / dim_seurat_obj_cc_sct$pca_split_plot, 
+          filename = paste0(directory_output, ".................svg"),
+          height = 8, width = 12)
+ggsave(plot = (dim_seurat_obj_sct$elb_plot | dim_seurat_obj_sct$pca_plot) / dim_seurat_obj_sct$pca_split_plot, 
+          filename = paste0(directory_output, ".................svg"),
+          height = 8, width = 12)
+
+
+saveRDS(seurat_obj_cc_log, paste0(directory_output, "integratelog_seurat_obj_qc_norm_ccr_reduc.rds"))
+saveRDS(seurat_obj_log, paste0(directory_output, "integratelog_seurat_obj_qc_norm_reduc.rds")) 
+saveRDS(seurat_obj_cc_sct, paste0(directory_output, "integratesct_seurat_obj_qc_norm_ccr_reduc.rds"))
+saveRDS(seurat_obj_sct, paste0(directory_output, "integratesct_seurat_obj_qc_norm_reduc.rds"))
+
+```
+
+```{r, Rsession}
+
+# Clean working space and show package version
+rm(list = ls())
+sessionInfo()
+
+```

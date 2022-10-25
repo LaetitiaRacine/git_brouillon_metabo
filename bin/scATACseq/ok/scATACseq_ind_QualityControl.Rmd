@@ -1,0 +1,458 @@
+---
+title: "scATACseq_ind_QualityControl"
+author: "Laëtitia Racine"
+date: "2022-09-02"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies, warning=F, message=F}
+
+library(Seurat)
+library(Signac)
+library(ggplot2)
+library(kableExtra)
+library(gridExtra)
+library(grid)
+library(BRGenomics) # function tidyChromosomes()
+library(knitr)
+
+```
+
+```{r, Working directories and external script}
+
+# directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory = "/home/rparmentier/Bureau/git_brouillon_metabo/"
+directory_data = paste0(directory, "data/scATACseq/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/", "scATACseq_ind_QualityControl/"))
+dir.create(path = paste0(directory, "exp/", "scATACseq_ind_QualityControl/", current_date))
+directory_output = paste0(directory, "exp/", "scATACseq_ind_QualityControl/", current_date, "/")
+
+# Load external script with functions and constantes 
+source(file = paste0(directory, "bin/","functions_constantes.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory_exp, "scATACseq_ind_CreateSeuratObject/"))
+list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_obj_annot.rds"))
+
+number_condition = length(list_seurat_obj)
+list_graphs = list()
+
+```
+
+# Quality control metrics on scATAC-seq 
+
+https://caleblareau.com/cshl-ast2019-scATAC/code/scATAC-tutorial.html  
+https://satijalab.org/signac/articles/pbmc_vignette.html  
+https://satijalab.org/signac/articles/mouse_brain_vignette.html  
+  
+Metrics to check to remove outliers cell if needed :     
+- Nucleosome banding pattern : fragment length periodicity, the histogram of DNA fragment sizes should exhibit a strong nucleosome banding pattern corresponding to the length of DNA wrapped around a single nucleosome.    
+- Ratio reads in genomic blacklist regions : Cells with a high proportion of reads mapping to these areas often represent technical artifacts and should be removed.       
+- Fraction of fragments in peaks   
+- Total number of fragments : the total number of high-quality fragments captured for the cell, Cells with very few reads may need to be excluded due to low sequencing depth. Cells with extremely high levels may represent doublets, nuclei clumps, or other artefacts.   
+- Transcriptional start site enrichment score : Poor ATAC-seq experiments typically will have a low TSS enrichment score.     
+  
+## Initial number of cells 
+
+```{r, Initial number of cells}
+
+# Extract number of cells and peaks 
+nbcells = unlist(lapply(list_seurat_obj, function(x) { ncol(x) }))
+nbpeaks = unlist(lapply(list_seurat_obj, function(x) { nrow(x) }))
+
+# Store data in a tab
+df_summary = data.frame("Conditions" = names(list_seurat_obj),
+                        "Initial_Cell_Number" = nbcells,
+                        "Initial_Peak_Number" = nbpeaks)
+
+df_summary %>%
+  kable() %>%
+  kable_styling() 
+
+rm(nbcells, nbpeaks)
+```
+
+## Compute QC metrics
+
+NB : nucleosome signal limit at 2, possible to adapt depending the data  
+We try to find the most fitted limits for all conditions = to apply same filtering on all data  
+### Nucleosome banding pattern
+
+```{r, Nucleosome banding pattern}
+
+nucleosome_qc = function(seurat_obj) {
+  
+  seurat_obj = NucleosomeSignal(object = seurat_obj)
+  seurat_obj$nucleosome_group = ifelse(seurat_obj$nucleosome_signal > "2", 'NS > 2', 'NS < 2')
+  
+  qc_plot_nucl_fragments = FragmentHistogram(object = seurat_obj) +
+    geom_vline(xintercept = 147, color = "red") +  # no nucleosome limit
+    geom_vline(xintercept = 294, color = "red") +  # one nucleosome limit
+    geom_vline(xintercept = 441, color = "red") +  # two nucleosomes limit
+    geom_vline(xintercept = 588, color = "red") +  # three nucleosomes limit
+    labs(title = "Nucleosome banding pattern") +
+    theme(title = element_text(face = "bold"))
+  
+  qc_plot_nucl_signal = VlnPlot(
+    object = seurat_obj,
+    features = 'nucleosome_signal',
+    pt.size = 0.1) + 
+    theme(legend.position = 'none',
+          axis.title.x = element_blank(),
+          axis.text.x = element_blank()) +  
+    geom_hline(yintercept = 2, color = "red") 
+
+  qc_plot_nucl_quality = FragmentHistogram(
+    object = seurat_obj, 
+    group.by = 'nucleosome_group') +
+    labs(title = "Nucleosome signal") +
+    theme(title = element_text(face = "bold"))
+  
+  # Output of the function
+  results = list(qc_plot_nucl_fragments = qc_plot_nucl_fragments,
+                 qc_plot_nucl_signal = qc_plot_nucl_signal,
+                 qc_plot_nucl_quality = qc_plot_nucl_quality,
+                 seurat_obj = seurat_obj)
+  return(results)
+  
+}
+
+for (i in 1:number_condition) {
+  temp = nucleosome_qc(list_seurat_obj[[i]])
+  list_graphs[[names(list_seurat_obj[i])]] = list(
+    "qc_plot_nucl_fragments" = temp$qc_plot_nucl_fragments,
+    "qc_plot_nucl_signal" = temp$qc_plot_nucl_signal,
+    "qc_plot_nucl_quality" = temp$qc_plot_nucl_quality)
+  list_seurat_obj[[i]] = temp$seurat_obj
+}
+
+# Free memory
+rm(temp, nucleosome_qc)
+
+```
+
+
+### Number of fragments and blacklist
+
+```{r, Fragments & reads}
+
+fragments_qc = function(seurat_obj) {
+  
+  seurat_obj$pct_reads_in_peaks = seurat_obj$peak_region_fragments / 
+    seurat_obj$passed_filters * 100
+  seurat_obj$blacklist_ratio = seurat_obj$blacklist_region_fragments /
+    seurat_obj$peak_region_fragments
+  
+  qc_plot_pct_reads_vln = VlnPlot(object = seurat_obj,
+                                  features = 'pct_reads_in_peaks',
+                                  pt.size = 0.1) + 
+    theme(legend.position = 'none',
+          axis.title.x = element_blank(),
+          axis.text.x = element_blank())
+  
+  qc_plot_pct_reads_point = qplot(log10(seurat_obj$passed_filters),
+                                  seurat_obj$pct_reads_in_peaks) +
+    labs(x = "log10 # of fragments", y = "% reads in peaks") +
+    geom_hline(yintercept = 60, color = "firebrick") +
+    geom_vline(xintercept = log10(5000), color = "firebrick")
+  
+  qc_plot_blacklist = VlnPlot(object = seurat_obj,
+                              features = 'blacklist_ratio',
+                              pt.size = 0.1) + 
+    theme(legend.position = 'none',
+          axis.title.x = element_blank(),
+          axis.text.x = element_blank())
+  
+    qc_plot_peak_region_fragments = VlnPlot(object = seurat_obj,
+                              features = 'peak_region_fragments',
+                              pt.size = 0.1) + 
+    theme(legend.position = 'none',
+          axis.title.x = element_blank(),
+          axis.text.x = element_blank())
+  
+  
+  results = list(qc_plot_pct_reads_vln = qc_plot_pct_reads_vln,
+                 qc_plot_pct_reads_point = qc_plot_pct_reads_point,
+                 qc_plot_blacklist = qc_plot_blacklist,
+                 qc_plot_peak_region_fragments = qc_plot_peak_region_fragments,
+                 seurat_obj = seurat_obj)
+  return(results)
+}
+
+
+for (i in 1:number_condition) {
+  temp = fragments_qc(list_seurat_obj[[i]])
+  list_graphs[[names(list_seurat_obj[i])]] = append(
+    list_graphs[[names(list_seurat_obj[i])]],
+    list("qc_plot_pct_reads_vln" = temp$qc_plot_pct_reads_vln,
+         "qc_plot_pct_reads_point" = temp$qc_plot_pct_reads_point,
+         "qc_plot_blacklist" = temp$qc_plot_blacklist,
+         "qc_plot_peak_region_fragments" = temp$qc_plot_peak_region_fragments)
+  )
+    list_seurat_obj[[i]] = temp$seurat_obj
+}
+
+rm(fragments_qc, temp)
+
+```
+
+
+### TSS enrichment score 
+
+```{r, TSS enrichment}
+
+# Very very long chunk 
+
+tss_qc = function(seurat_obj) {
+
+  seurat_obj = TSSEnrichment(object = seurat_obj, fast = FALSE)
+  seurat_obj$high.tss = ifelse(seurat_obj$TSS.enrichment > 2, 'High', 'Low')
+  seurat_obj$pct_reads_in_TSS = seurat_obj$TSS_fragments / seurat_obj$passed_filters * 100
+  
+
+  qc_plot_tss = TSSPlot(seurat_obj, group.by = 'high.tss') + 
+    NoLegend()
+    labs(title = "TSS enrichment score") +
+    theme(title = element_text(face = "bold"))
+  
+  qc_plot_tss_reads =  qplot(seurat_obj$pct_reads_in_TSS, seurat_obj$pct_reads_in_peaks) +
+    labs(x = "% reads in TSS", y = "% reads in peaks") +
+    geom_abline(intercept = 0, slope = 1, linetype = 2, color = "firebrick")
+  
+  results = list(qc_plot_tss = qc_plot_tss,
+                 qc_plot_tss_reads = qc_plot_tss_reads,
+                 seurat_obj = seurat_obj)
+  return(results)
+  
+}
+
+for (i in 1:number_condition) {
+  
+  temp = tss_qc(list_seurat_obj[[i]])
+
+  list_graphs[[names(list_seurat_obj[i])]] = append(
+    list_graphs[[names(list_seurat_obj[i])]],
+    list("qc_plot_tss" = temp$qc_plot_tss,
+         "qc_plot_tss_reads" = temp$qc_plot_tss_reads)
+  )
+    
+    list_seurat_obj[[i]] = temp$seurat_obj
+
+}
+
+rm(temp, tss_qc)
+gc()
+
+```
+
+## Visualize QC metrics
+
+```{r, Visualize QC metrics, results = 'hold', fig.width=22, fig.height=16}
+
+for (i in 1:number_condition) {
+  
+  grid.arrange(grobs = list_graphs[[i]], 
+               ncol = 3, 
+               nrow = 3,
+               top = textGrob(paste("QC metrics for", names(list_seurat_obj[i]))))
+
+}
+
+```
+
+```{r, Save outputs with QC metrics, results='hide'}
+
+for (i in 1:number_condition) {
+  
+ ggsave(plot = arrangeGrob(grobs = list_graphs[[i]], 
+                    ncol = 3,
+                    nrow = 3,
+                    top = textGrob(paste("QC metrics for", names(list_graphs[i])))) ,
+         filename = paste0(directory_output, names(list_graphs[i]), "_plot_quality_control.svg"),
+         width = 40, height = 40)
+  
+}        
+
+# saveRDS(object = list_seurat_obj, file = paste0(directory_output, "list_seurat_obj_annot_qc.rds"))
+saveRDS(object = list_graphs, file = paste0(directory_output, "list_graphs_qc.rds"))
+
+```
+
+## Number of cells after QC filtering
+
+```{r, Remove outlier cells}
+
+# Initialize summary df with initial numbers of cells and peaks
+vec_cell = c()
+vec_peak = c()
+
+for (i in 1:number_condition) {
+  vec_cell = c(vec_cell, paste0(names(list_seurat_obj[i]), "_NbCells"))
+  vec_peak = c(vec_peak, paste0(names(list_seurat_obj[i]), "_NbPeaks"))
+}
+
+df_filter = data.frame(
+  "Condition" = c(vec_cell, vec_peak),
+  "Initial" = c(df_summary$Initial_Cell_Number, df_summary$Initial_Peak_Number))
+
+
+# Apply first filter on nucleosome signal 
+temp_cell = c()
+temp_peak = c()
+
+for (i in 1:number_condition) {
+  list_seurat_obj[[i]] =  subset(x = list_seurat_obj[[i]],
+                                 subset = nucleosome_signal < 2)
+  temp_cell = c(temp_cell, ncol(list_seurat_obj[[i]]))
+  temp_peak = c(temp_peak, nrow(list_seurat_obj[[i]]))
+}
+
+df_filter$Nucleosome_filter = c(temp_cell, temp_peak)
+
+
+# Apply filter on number of fragments in cell
+temp_cell = c()
+temp_peak = c()
+
+for (i in 1:number_condition) {
+  list_seurat_obj[[i]] =  subset(x = list_seurat_obj[[i]], 
+                                 subset = peak_region_fragments > 3000 &
+                                   peak_region_fragments < 50000)
+  temp_cell = c(temp_cell, ncol(list_seurat_obj[[i]]))
+  temp_peak = c(temp_peak, nrow(list_seurat_obj[[i]]))
+}
+
+df_filter$Fragments_filter =  c(temp_cell, temp_peak)
+
+
+# Apply filter on percentage of fragments in peaks
+temp_cell = c()
+temp_peak = c()
+
+for (i in 1:number_condition) {
+  list_seurat_obj[[i]] =  subset(x = list_seurat_obj[[i]], 
+                                 subset = pct_reads_in_peaks > 50)
+  temp_cell = c(temp_cell, ncol(list_seurat_obj[[i]]))
+  temp_peak = c(temp_peak, nrow(list_seurat_obj[[i]]))
+}
+
+df_filter$PctReads_filter =  c(temp_cell, temp_peak)
+
+
+# Apply filter on blacklist fragments
+temp_cell = c()
+temp_peak = c()
+
+for (i in 1:number_condition) {
+  list_seurat_obj[[i]] =  subset(x = list_seurat_obj[[i]], 
+                                 subset = blacklist_ratio < 0.05)
+  temp_cell = c(temp_cell, ncol(list_seurat_obj[[i]]))
+  temp_peak = c(temp_peak, nrow(list_seurat_obj[[i]]))
+}
+
+df_filter$Blacklist_filter =  c(temp_cell, temp_peak)
+
+
+# Apply filter on TSS enrichment score
+temp_cell = c()
+temp_peak = c()
+
+for (i in 1:number_condition) {
+  list_seurat_obj[[i]] =  subset(x = list_seurat_obj[[i]], 
+                                 subset = TSS.enrichment > 2)
+  temp_cell = c(temp_cell, ncol(list_seurat_obj[[i]]))
+  temp_peak = c(temp_peak, nrow(list_seurat_obj[[i]]))
+}
+
+df_filter$TSS_filter =  c(temp_cell, temp_peak)
+
+
+# Show summary of applied filters
+df_filter %>%
+  kable(caption = "Remaining cells after cumulative QC filters") %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "250px")
+ 
+```
+
+Après le filtering, les cellules enlevées n'apparaissent plus dans les meta.data.
+
+## Clean chromosome list
+
+Grange = liste des peaks avec leur location génomique (chr, start, end)
+Count = matrice de count avec la liste des peaks et le nombre de fragments qu'ils contiennent par cellule
+Attention lorsqu'on change le grange, ça ne change pas automatiquement la matrice de count. 
+Il faut ensuite faire correspondre les listes de peak pour ne garder que ceux qui sont dans le grange filtré. 
+```{r, Keep only standard chromosomes}
+
+clean_chr = function(seurat_obj) {
+  
+  seurat_obj@assays$peaks@ranges = tidyChromosomes(gr = seurat_obj@assays$peaks@ranges,
+                                                   keep.X = TRUE,
+                                                   keep.Y = TRUE,
+                                                   keep.M = FALSE,
+                                                   keep.nonstandard = FALSE,
+                                                   genome = "hg38")
+ 
+  list_peak_clean = seurat_obj@assays$peaks@ranges$peak_name
+  
+  seurat_obj = subset(x = seurat_obj, features = list_peak_clean) 
+
+  return(seurat_obj)
+  
+}
+
+temp_cell = c()
+temp_peak = c()
+for (i in 1:number_condition) {
+  
+  list_seurat_obj[[i]] = clean_chr(list_seurat_obj[[i]])
+  temp_peak = c(temp_peak, nrow(list_seurat_obj[[i]]))
+  temp_cell = c(temp_cell, ncol(list_seurat_obj[[i]]))
+  
+}
+df_filter$Chromosome_filter = c(temp_cell, temp_peak)
+
+df_filter
+
+```
+
+
+```{r, Save outputs}
+
+saveRDS(object = list_seurat_obj, 
+        file = paste0(directory_output, "list_seurat_obj_annot_qc_filtered.rds"))
+
+```
+
+```{r, Rsession}
+
+# Clean working space and show package version
+rm(list = ls())
+sessionInfo()
+
+```

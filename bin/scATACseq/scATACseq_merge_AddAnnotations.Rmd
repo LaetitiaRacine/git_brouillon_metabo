@@ -1,0 +1,125 @@
+---
+title: "scATACseq_merge_Annotation"
+author: "Laëtitia Racine"
+date: "2022-09-16"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "show"
+    toc: true
+    theme: journal
+---
+
+```{r, Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, Dependencies, warning=F, message=F}
+
+library(EnsDb.Hsapiens.v86)   # v.86 = hg38 | v.75 = hg19
+library(GenomeInfoDb)
+
+```
+
+```{r, Working directories and external script}
+
+directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory_exp = paste0(directory, "exp/")
+directory_data = paste0(directory, "data/scATACseq/")
+directory_bin = paste0(directory, "bin/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"scATACseq_merge_AddAnnotations/"))
+dir.create(path = paste0(directory_exp,"scATACseq_merge_AddAnnotations/", current_date))
+directory_output = paste0(directory_exp, "scATACseq_merge_AddAnnotations/", current_date, "/")
+
+# Load external script with functions and constantes 
+source(file = paste0(directory_bin, "functions_constantes.R"))
+
+```
+
+```{r, Input loading}
+
+# Load seurat objects 
+dir_seurat = pic_last_dir(paste0(directory_exp, "scATACseq_merge_MergeObjects/"))
+seurat_common_merged = readRDS(paste0(dir_seurat, "/", "seurat_obj_qc_common_merged.rds"))
+seurat_merged = readRDS(paste0(dir_seurat, "/", "seurat_obj_qc_merged.rds"))
+
+# Load grange with hg38 annotations
+dir_annot = pic_last_dir(paste0(directory_exp, "AnnotationsFiles_createGrange/"))
+hg38_annotations = readRDS(paste0(dir_annot, "/", "hg38_annotations_gr.rds"))
+
+```
+
+```{r, Add annotations database, message=F, warning=F}
+
+# Extract annotations from EnsDb database
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86, standard.chromosomes = TRUE)
+seqlevelsStyle(annotations) = "UCSC"
+print(table(annotations$type))
+
+# Add annotation database into seurat object 
+Annotation(seurat_common_merged) = annotations
+Annotation(seurat_merged) = annotations
+
+```
+
+```{r, Add peak_name metadata}
+
+add_peak_name = function(seurat_obj) {
+  names_peaks = paste0(seurat_obj@assays$peaks@ranges@seqnames, "-", seurat_obj@assays$peaks@ranges@ranges)
+  mcols(seurat_obj@assays$peaks@ranges)$peak_name = names_peaks
+  print(seurat_obj@assays$peaks@ranges)
+  return(seurat_obj)
+}
+
+seurat_common_merged = add_peak_name(seurat_common_merged)
+seurat_merged = add_peak_name(seurat_merged)
+
+```
+
+```{r, Add peaks annotations}
+
+add_peak_annot = function(seurat_obj, annotations_gr) {
+  
+  # First a matrix is created filled with FALSE and added to the Grange
+  annotations_types = levels(factor(annotations_gr$type))
+  metadata = matrix(FALSE, ncol = length(annotations_types), nrow = length(seurat_obj@assays$peaks@ranges))
+  colnames(metadata) = annotations_types
+  mcols(seurat_obj@assays$peaks@ranges) = append(mcols(seurat_obj@assays$peaks@ranges), metadata) 
+  
+  # For each of the annotations types an overlap is calculated and used to assigned the peak as TRUE when overlapping with the annotation
+  for (i in 1:ncol(metadata)){
+    sub_annot = annotations_gr[annotations_gr$type == annotations_types[i]]
+    overlaps = findOverlaps(seurat_obj@assays$peaks@ranges, sub_annot)
+    mcols(seurat_obj@assays$peaks@ranges)[queryHits(overlaps),i] = TRUE
+  }
+  
+  # Return output
+  return(seurat_obj)
+  
+}
+
+seurat_common_merged = add_peak_annot(seurat_common_merged, hg38_annotations)
+seurat_merged = add_peak_annot(seurat_merged, hg38_annotations)
+
+print(seurat_common_merged@assays$peaks@ranges)
+print(seurat_merged@assays$peaks@ranges)
+
+```
+
+```{r, Save outputs}
+
+saveRDS(seurat_common_merged, paste0(directory_output, "seurat_obj_qc_annot_common_merged.rds"))
+saveRDS(seurat_merged, paste0(directory_output, "seurat_obj_qc_annot_merged.rds"))
+
+```
+
+```{r, Rsession}
+
+# Clean working space and show package version
+rm(list = ls())
+sessionInfo()
+
+```

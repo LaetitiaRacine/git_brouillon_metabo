@@ -1,0 +1,196 @@
+---
+title: "scRNAseq_CITEseq_ind_CreateSeuratObject"
+author: "Laëtitia Racine"
+date: "06/12/2021"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies, message=F, warning=F}
+
+library(Seurat)
+library(dplyr)
+library(stringr)
+library(knitr)
+
+```
+
+Ce code **permet de** :    
+- créer les matrices de count à partir des fichiers issus de CellRanger    
+- mettre les matrices de count au format Seurat Object pour chaque condition     
+- enregistrer les objets Seurat créés  
+  
+Il s'est **inspiré** de : 
+- https://satijalab.org/seurat/articles/multimodal_vignette.html    
+- https://github.com/satijalab/seurat/issues/2362
+    
+On obtient **en sortie** un objet Seurat par condition. Un objet Seurat sert de conteneurs qui regroupe à la fois les données (comme les matrices de counts) mais aussi les analyses (comme les PCA ou clustering) d'un même *single-cell dataset*. Il contient plusieurs *Assays* selon le type de données : ARN, Protéine (ADT), Normalisation... On retrouve la matrice de *counts* pour chaque assay indiquant les features (= gènes de la base de données GRCh38) en ligne et les cellules identifiées par leur barcode en colonnes. Les commandes principales pour manipuler un objet Seurat sont indiquées dans la vignette : https://satijalab.org/seurat/articles/essential_commands.html.  
+  
+```{r, Working directories and external script}
+
+# Load working directories
+# directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory = "/home/rparmentier/Bureau/git_brouillon_metabo/"
+directory_exp = paste0(directory, "exp/")
+directory_data = paste0(directory, "data/scRNAseq/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_ind_CreateSeuratObject/"))
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_ind_CreateSeuratObject/", 
+                         current_date))
+directory_output = paste0(directory_exp, "scRNAseq_CITEseq_ind_CreateSeuratObject/", 
+                          current_date, "/")
+
+# Load external script with functions and constantes 
+source(file = paste0(directory,"bin/", "functions_constantes.R"))
+
+```
+
+```{r, Input loading}
+
+# List of files available in data folder
+matrix_list = list.files(path = directory_data, pattern = "mtx")
+barcodes_list = list.files(path = directory_data, pattern = "barcodes")
+features_list = list.files(path = directory_data, pattern = "features")
+
+# Extract number and names of conditions
+if (length(matrix_list) == length(barcodes_list) & 
+    length(barcodes_list) == length(features_list)) {
+  number_condition = length(matrix_list)
+} else { print("Files missing, check data folder") }
+
+list_condition = str_extract(string = matrix_list, pattern = "(?<=scRNAseq_)[:alnum:]+(?=_)")
+
+# Initialize output list 
+list_seurat_obj = list()
+
+```
+
+On travaille ici à partir du dossier envoyé par la plateforme de Cochin, contenant les fichiers traités via CellRanger. Pour chaque échantillon obtenus en multiplexage, on dispose d'un dossier contenant les informations nécessaires à la création des matrices de *count* stockées dans : [nom échantillon]/outs/per_sample_outs/sample[1ou2]/count. Pour chaque échantillon obtenu sans multiplexage et avec la nouvelle version de Cell Ranger, les informations sont stockées dans : [nom échantillon]/outs/filtered_feeature_bc_matrix. Pour plus de facilité pour la suite, les fichiers utiles au code ont été extraits des dossiers et renommés pour suivre la même nomenclature.  
+Pour que le gène (assay = RNA) puisse être différencié facilement de la protéine (assay = ADT) pour le CD34, la détection de la protéine est indiquée sous le nom CD34.1. Pour le CD133, on n'a pas ce problème car le gène associé au CD133 porte un autre nom : PROM1. 
+
+```{r, Create Individual Seurat Object - function definition}
+
+create_seurat_ADT_RNA = function(matrix_file, barcode_file, feature_file) {
+  
+  # Create a global large dgCMatrix with genes, ADT (CITEseq) and HTO (multiplexing) info
+  matrix = as.sparse(ReadMtx(
+    mtx = paste0(directory_data, matrix_file), # detected RNA
+    cells = paste0(directory_data, barcode_file), # detected cells list
+    features = paste0(directory_data, feature_file) # detected genes or antibody list
+    )) 
+  
+  # Separate matrix into one gene matrix and one ADT matrix
+  tab_matrix = as.data.frame(matrix)
+  tab_antibody = tab_matrix %>%
+    dplyr::filter(row.names(tab_matrix) %in% c("CD34.1", "CD133"))
+  tab_genes = tab_matrix %>%
+    dplyr::filter(!row.names(tab_matrix) %in% c("CD34.1", "CD133", "CMO301", "CMO302"))
+
+  # Create seurat object with gene matrix count in assay RNA
+  seurat_obj = CreateSeuratObject(counts = tab_genes, assay = "RNA")
+  # Create a new assay to store ADT matrix count
+  adt_assay = CreateAssayObject(counts = tab_antibody)
+  # Add the new assay into the original seurat object
+  seurat_obj[["ADT"]] = adt_assay
+  # Add key for features of each assay
+  Key(seurat_obj[["RNA"]]) = "rna_"
+  Key(seurat_obj[["ADT"]]) = "cite_"
+  
+  return(seurat_obj)
+  
+}
+
+```
+
+```{r, Create Individual Seurat Object - call function}
+
+# Call function to create objects and store in a list
+for (i in 1:number_condition) {
+
+  list_seurat_obj[[list_condition[i]]] = create_seurat_ADT_RNA(
+    matrix_file = str_subset(string = matrix_list, 
+                             pattern = paste0(list_condition[i], "_")),
+    barcode_file =  str_subset(string = barcodes_list, 
+                               pattern = paste0(list_condition[i], "_")),
+    feature_file = str_subset(string = features_list, 
+                              pattern = paste0(list_condition[i], "_"))
+  )
+
+  # Update orig.ident with the condition
+  Idents(object = list_seurat_obj[[i]]) = names(list_seurat_obj[i])
+  list_seurat_obj[[i]]$orig.ident = names(list_seurat_obj[i])
+  
+  print(paste(list_condition[i], "seurat obj created"))
+
+}
+
+```
+
+```{r, Create Individual Seurat Object - check outputs}
+
+# Check each objects : number of assays and CITEseq antibody detected
+for (i in 1:number_condition) {
+  
+  cat(names(list_seurat_obj)[i], " : \n",
+      "- Assays :", Assays(list_seurat_obj[[i]]), "\n",
+      "- CITEseq :", rownames(list_seurat_obj[[i]][["ADT"]]), "\n",
+      "- Nb cells :", ncol(list_seurat_obj[[i]]), "\n",
+      "- Nb features RNA :", nrow(list_seurat_obj[[i]][["RNA"]]), "\n",
+      "- Nb features ADT :", nrow(list_seurat_obj[[i]][["ADT"]]), "\n")
+}
+
+# Visualize first object of the list to see the structure
+## global structure
+list_seurat_obj["CTRL"]
+## meta.data 
+list_seurat_obj["CTRL"]$meta.data
+## 
+list_seurat_obj[["CTRL"]]@assays$RNA
+## 
+list_seurat_obj[["CTRL"]]@assays$RNA@ranges
+## raw count matrix store in counts.slot (first 10 rows and column)
+as.data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@counts)[1:10, 1:10]
+## normalized count matrix store in data.slot (first 10 rows and column)
+as.data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@data)[1:10, 1:10]
+# => same as the raw matrix because the normalization is not done yet
+
+
+
+```
+  
+When creating seurat objects, the raw counts are stored in both the counts and data slot at the beginning. 
+Then, the NormalizeData() function will work off of the counts slots and overwrite the data slot when the counts slot will still contain the raw data.
+
+```{r, Save outputs}
+
+saveRDS(list_seurat_obj, file = paste0(directory_output, "list_seurat_obj.rds"))
+
+```
+
+```{r, Rsession}
+
+# Clean working space and show package version
+rm(list = ls())
+sessionInfo()
+
+```
+

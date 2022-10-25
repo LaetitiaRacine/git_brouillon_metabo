@@ -1,0 +1,163 @@
+---
+title: "scATACseq_src"
+author: "Laëtitia"
+date: "2022-09-02"
+output: html_document
+---
+
+# annotation_grange
+
+*OBJECTIVE* = Extract hg38 and hg19 annotations information in R objects
+
+*OUTPUTS* = 
+- hg19_annotations_gr.rds
+- hg38_annotations_gr.rds
+
+```{r, annotation_grange}
+
+# rmarkdown::render(input = "/home/rparmentier/bureau/Git_Metabo_Analysis/bin/annotation_grange.Rmd",
+#                   output_format = "html_document",
+#                   output_dir = "/home/rparmentier/Bureau/Git_Metabo_Analysis/html/",
+#                   output_file = paste0(Sys.Date(), '_', "annotation_grange.html"))
+
+
+```
+
+
+# scATACseq_ind_CreateSeuratObject.Rmd
+
+*OBJECTIVE* =  
+  
+*INPUTS* =   
+- [DRUG]_filtered_peak_bc_matrix.h5  
+- [DRUG]_singlecell.csv  
+- [DRUG]_fragments.tsv.gz  
+- hg38_annotation_file.rds ?
+  
+*OUTPUTS* = 
+- list_seurat_obj_annot.rds  
+  
+```{r}
+
+# directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory = "/home/rparmentier/Bureau/git_brouillon_metabo/"
+
+rmarkdown::render(input = paste0(directory, "bin/scATACseq/ok/scATACseq_ind_CreateSeuratObject.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "html/"),
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_ind_CreateSeuratObject.html"))
+
+```
+
+
+# scATACseq_ind_QualityControl.Rmd
+
+*OBJECTIVE* =  
+  
+*INPUTS* =   
+- list_seurat_obj_annot.rds **(cf. scATACseq_ind_CreateSeuratObject)**  
+  
+*OUTPUTS* = 
+- list_seurat_obj_annot_qc.rds
+- list_graphs_qc.rds
+- list_seurat_obj_annot_qc_filtered.rds
+- [DRUG]_plot_quality_control.svg (OPTIONAL)
+
+```{r}
+
+rmarkdown::render(input = "/home/rparmentier/bureau/Git_Metabo_Analysis/bin/scATACseq_ind_QualityControl.Rmd",
+                  output_format = "html_document",
+                  output_dir = "/home/rparmentier/Bureau/Git_Metabo_Analysis/html/",
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_ind_QualityControl.html"))
+
+```
+
+
+# scATACseq_merge_MergeObjects.Rmd
+
+*OBJECTIVE* =  
+  
+*INPUTS* =   
+- list_seurat_obj_annot_qc_filtered.rds **(cf. scATACseq_ind_QualityControl.Rmd)**  
+- [DRUG]_fragments.tsv.gz  
+
+*OUTPUTS* =   
+- seurat_obj_qc_common_merged.rds  
+- seurat_obj_qc_merged.rds  
+  
+```{r}
+
+rmarkdown::render(input = "/home/rparmentier/bureau/Git_Metabo_Analysis/bin/scATACseq_merge_MergeObjects.Rmd",
+                  output_format = "html_document",
+                  output_dir = "/home/rparmentier/Bureau/Git_Metabo_Analysis/html/",
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_merge_MergeObjects.html"))
+
+```
+
+
+# scATACseq_merge_AddAnnotations
+
+```{r}
+
+rmarkdown::render(input = "/home/rparmentier/bureau/Git_Metabo_Analysis/bin/scATACseq_merge_AssAnnotations.Rmd",
+                  output_format = "html_document",
+                  output_dir = "/home/rparmentier/Bureau/Git_Metabo_Analysis/html/",
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_merge_AddAnnotations.html"))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+# scATACseq_merge_NormalizationReduction.Rmd
+
+*OBJECTIVE* =  
+  
+*INPUTS* =   
+  
+*OUTPUTS* = 
+- seurat_obj_qc_common_merged_normalized_reduced.rds    
+- seurat_obj_qc_merged_normalized_reduced.rds  
+  
+```{r}
+# 
+# rmarkdown::render(input = "/home/rparmentier/bureau/Git_Metabo_Analysis/bin/scATACseq_merge_NormalizationReduction.Rmd",
+#                   output_format = "html_document",
+#                   output_dir = "/home/rparmentier/Bureau/Git_Metabo_Analysis/html/",
+#                   output_file = paste0(Sys.Date(), '_', "scATACseq_merge_NormalizationReduction.html"))
+# 
+
+```
+
+
+# scATACseq_merge_CellPeaksStatistics.Rmd
+
+*OBJECTIVE* =    
+    
+*INPUTS* =     
+- seurat_common_merged_qc_normalized_reduced.rds **(cf. scATACseq_merge_NormalizationReduction.Rmd)**   
+    
+*OUTPUTS* =    
+- global_tab_cell.csv  
+- statistic_tab_cell.csv   
+- nbpeaks_per_cell_plot.svg  
+- global_tab_peak.csv  
+- statistic_tab_peak.csv  
+- nbcell_sharing_peaks_plot.svg  
+  
+```{r}
+
+# rmarkdown::render(input = "/home/rparmentier/bureau/Git_Metabo_Analysis/bin/scATACseq_merge_CellPeaksStatistics.Rmd",
+#                   output_format = "html_document",
+#                   output_dir = "/home/rparmentier/Bureau/Git_Metabo_Analysis/html/",
+#                   output_file = paste0(Sys.Date(), '_', "scATACseq_merge_CellPeaksStatistics.html"))
+
+```
+
