@@ -1,0 +1,62 @@
+---
+title: "scRNAseq_CITEseq_ind_ReductionDoublets"
+author: "Laëtitia Racine"
+date: "2022-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+
+#.Vérification de la présence de doublets
+
+=> à faire au tout tout début du workflow ! avant de merge les fichiers !
+https://www.youtube.com/watch?v=NqvAS4HgmrE
+https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html#Predict_doublets
+
+il existe un pourcentage d'erreur d'encapsulation des cellules en fonction du nombre inséré dans la puce. Il est en effet possible que des deux cellules aient été emprisonnées dans le même GEM, leurs transcrits auront donc tous le même barcode et seront considérés comme appartenant à une seule cellules. Il convient ainsi de nettoyer le jeu de données en enlevant les possibles doublets présents.
+On utilise ici le package DoubletFinder mais d'autres outils existent (ex : Scrublet..). Ce détecteur de doublets nécessite une approximation du nombre de doublets attendus. Dans notre cas, on a inséré environ 9000 cellules par puits pour espérer avoir 5000 cellules par puits dans l'analyse. On estime donc le probable taux de doublet à environ 4,6% (voir notice protocole 10X).
+Dans l'exemple, il est indiqué : "Ideally doublet prediction should be run on each sample separately, especially if your different samples have different proportions of celltypes. In this case, the data is subsampled so we have very few cells per sample and all samples are sorted PBMCs so it is okay to run them together." On décide de le faire également sur le fichier avec toutes les conditions. => à discuter ?!? 
+
+On travaille à partir de l'objet contenant tous les filtres. 
+
+```{r, results = 'hold', fig.width=18, fig.height=18, fig.fullwidth=TRUE}
+
+library(DoubletFinder)
+
+for (i in 1:number_conditions) {
+  
+  obj = list_seurat_obj[[1]]
+  # define the expected number of doublet cells
+  nExp <- round(ncol(obj) * 0.046)  # expect 4,6% doublets
+  obj <- doubletFinder_v3(obj, pN = 0.25, pK = 0.09, nExp = nExp, PCs = 1:30)
+  
+  # name of the DF prediction can change, so extract the correct column name.
+  DF.name = colnames(obj@meta.data)[grepl("DF.classifications_0.25_0.09_207", colnames(obj@meta.data))]
+  
+  # vizualisation
+  DimPlot(obj, split.by = "orig.ident", group.by = DF.name, reduction = "umap", ncol = 3) + NoAxes()
+  
+  VlnPlot(obj, features = "nFeature_RNA", group.by = DF.name, pt.size = 0.1)
+  
+  obj = obj[, obj@meta.data[, DF.name] == "Singlet"]
+  obj[["filter_rmDB"]] = "rm Doublet" 
+  
+  filtered_list_seurat_obj[[i]] = subset(list_seurat_obj[[i]], subset = 1000 < nFeature_RNA & nFeature_RNA < 6500)
+  filtered_list_seurat_obj[[i]][["filter_nbG"]] = "1000<nFeatures>6500"
+  
+}
+
+
+```
+
+
+
+
+Il convient ensuite de vérifier si les doublets identifiés par le package sont réellement des doublets. On s'attend à ce que deux cellules contiennent plus de gènes exprimés qu'une seule cellule. Le plot ci-dessous montre que c'est bien le cas pour les doublets détectés. On peut donc se fier à la prédiction de l'outil.
+

@@ -1,0 +1,167 @@
+---
+title: "scRNAseq_CITEseq_integ_DownstreamAnalysis_CorrelationADTRNA"
+author: "Laëtitia Racine"
+date: "2022-10-03"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "show"
+    toc: false
+    theme: journal
+---
+
+```{r, Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, Dependencies, message=F, warning=F}
+
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+
+```
+
+```{r, Working directories and external script}
+
+directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory_exp = paste0(directory, "exp/")
+directory_data = paste0(directory, "data/scRNAseq/")
+directory_bin = paste0(directory, "bin/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_integ_DownstreamAnalysis_CorrelationADTRNA/"))
+dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_integ_DownstreamAnalysis_CorrelationADTRNA/", current_date))
+directory_output = paste0(directory_exp, "scRNAseq_CITEseq_integ_DownstreamAnalysis_CorrelationADTRNA/", current_date, "/")
+
+# Load external script with functions and constantes 
+source(file = paste0(directory_bin, "functions_constantes.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory_exp, "scRNAseq_CITEseq_integ_/"))
+
+```
+
+
+
+
+Visualisation sur PCA expression protéine VS détection ARN
+https://satijalab.org/seurat/articles/multimodal_vignette.html
+
+
+<!-- # ```{r} -->
+<!-- # # obj = readRDS(paste0(dir_input, "data_allcond_normalized.rds")) -->
+<!-- # # => Problème au niveau des filter, on perd le CD133 -->
+<!-- # obj = readRDS(paste0(dir_input, "data_allcond_filter_nbG_pMT_pRB_rmMT_normalized.rds")) -->
+<!-- #  -->
+<!-- # obj = obj_nbG_pMT_pRB_rmMT -->
+<!-- #    -->
+<!-- #  -->
+<!-- # obj = NormalizeData(obj, normalization.method = "CLR", assay = "ADT") -->
+<!-- ``` -->
+
+<!-- ```{r CD34, results='hold', fig.width=18, fig.height=8, fig.fullwidth=TRUE} -->
+
+<!-- DefaultAssay(obj) = "ADT" -->
+<!-- p1 <- FeaturePlot(obj, "CD34.1", cols = c("lightgrey", "darkgreen")) + ggtitle("CD34 protein") -->
+<!-- p2 = FeaturePlot(obj, "CD34.1", cols = c("lightgrey", "darkgreen"), split.by = "orig.ident") + ggtitle("CD34 protein") -->
+<!-- DefaultAssay(obj) = "RNA" -->
+<!-- p3 <- FeaturePlot(obj, "CD34") + ggtitle("CD34 RNA") -->
+<!-- p4 <- FeaturePlot(obj, "CD34", split.by = "orig.ident") + ggtitle("CD34 RNA") -->
+
+<!-- (p1 | p3)  -->
+<!-- p2 -->
+<!-- p4 -->
+<!-- ``` -->
+
+<!-- ```{r CD133, results='hold', fig.width=18, fig.height=18, fig.fullwidth=TRUE} -->
+
+<!-- DefaultAssay(obj) = "ADT" -->
+<!-- p1 <- FeaturePlot(obj, "CD133", cols = c("lightgrey", "darkgreen")) + ggtitle("CD133 protein") -->
+<!-- DefaultAssay(obj) = "RNA" -->
+<!-- p2 <- FeaturePlot(obj, "PROM1") + ggtitle("CD133 RNA") -->
+
+<!-- p1 | p2 -->
+
+
+
+
+<!-- library(stringr) -->
+<!-- no_filter_list = rownames(no_filter) -->
+<!-- table(str_detect(no_filter_list, pattern = "CD133")) # Protein du cD133 -->
+<!-- table(str_detect(no_filter_list, pattern = "CD34")) # Gene du CD34 et poteine du CD34 -->
+<!-- table(str_detect(no_filter_list, pattern = "PROM1")) # Gene du CD133 -->
+
+<!-- ``` -->
+
+
+
+
+<!-- # Autre -->
+
+<!-- ```{r, results='hold', fig.width=18, fig.height=18, fig.fullwidth=TRUE} -->
+<!-- # DimHeatmap(object = obj, -->
+<!-- #            dims = 1, -->
+<!-- #            reduction = "pca.LogNorm", -->
+<!-- #            cells = NULL, -->
+<!-- #            nfeatures = 2000) -->
+
+<!-- DoHeatmap(object = obj, -->
+<!--           group.by = "orig.ident", -->
+<!--           features = VariableFeatures(obj), -->
+<!--           size = 4, -->
+<!--           angle = 90) -->
+
+<!-- ``` -->
+
+
+
+<!-- # Normalize ADT data, -->
+<!-- # DefaultAssay(data) <- "ADT" -->
+<!-- # data <- NormalizeData(data, normalization.method = "CLR", margin = 2) -->
+<!-- # DefaultAssay(data) <- "RNA" -->
+<!-- #  -->
+<!-- # # Note that the following command is an alternative but returns the same result -->
+<!-- # data <- NormalizeData(data, normalization.method = "CLR", margin = 2, assay = "ADT") -->
+<!-- #  -->
+<!-- # # Now, we will visualize CD14 levels for RNA and protein By setting the default assay, we can -->
+<!-- # # visualize one or the other -->
+<!-- # DefaultAssay(data) <- "ADT" -->
+<!-- # p1 <- FeaturePlot(data, "CD133", cols = c("lightgrey", "darkgreen")) + ggtitle("CD133 protein") -->
+<!-- # DefaultAssay(data) <- "RNA" -->
+<!-- # p2 <- FeaturePlot(data, "CD133") + ggtitle("CD133 RNA") -->
+<!-- #  -->
+<!-- # #!!!!!!!!!!!!!! erreur : Unable to find a DimReduc matching one of 'umap', 'tsne', or 'pca', please specify a dimensional reduction to use -->
+<!-- # # place plots side-by-side -->
+<!-- # p1 | p2 -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r, Save outputs}
+
+```
+
+```{r, Rsession}
+
+# Clean working space and show package version
+rm(list = ls())
+sessionInfo()
+
+```

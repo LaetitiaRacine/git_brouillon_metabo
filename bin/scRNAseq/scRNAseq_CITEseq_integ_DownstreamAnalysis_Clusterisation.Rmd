@@ -1,0 +1,97 @@
+---
+title: "scRNAseq_CITEseq_integ_DownstreamAnalysis_Clusterisation"
+author: "Laëtitia Racine"
+date: "2022-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# .Clusterisation
+
+https://satijalab.org/seurat/articles/multimodal_vignette.html
+https://satijalab.org/seurat/articles/pbmc3k_tutorial.html
+
+```{r}
+
+obj = obj_nbG_pMT_pRB_rmMT
+
+test = FindNeighbors(object = obj, 
+                     assay = "RNA", 
+                     reduction = "pca.LogNorm",
+                     dims = 1:30,
+                     graph.name = "knn.LogNorm",
+                     verbose = TRUE)
+
+test = FindClusters(object = test,
+                    graph.name = "knn.LogNorm",
+                    resolution = 0.5,
+                    verbose = TRUE)
+
+
+rna_markers = FindMarkers(object = test,
+                   assay = "RNA",
+                   group.by = "orig.ident",
+                   ident.1 = ,
+                   ident.2 = ,
+                   verbose = TRUE)
+
+adt_markers = FindMarkers(object = obj,
+                   assay = "ADT",
+                   group.by = "orig.ident",
+                   ident.1 = ,
+                   ident.2 = ,
+                   verbose = TRUE)
+
+```
+
+
+```{r}
+# Run the standard workflow for visualization and clustering
+combined <- ScaleData(combined, verbose = FALSE)
+combined <- RunPCA(combined, npcs = 30, verbose = FALSE)
+combined <- RunUMAP(combined, reduction = "pca", dims = 1:30)
+combined <- FindNeighbors(combined, reduction = "pca", dims = 1:30)
+combined <- FindClusters(combined, resolution = 0.5)
+p1 <- DimPlot(combined, reduction = "umap", group.by = "condition")
+p2 <- DimPlot(combined, reduction = "umap", label = TRUE, repel = TRUE)
+p1 + p2
+DimPlot(combined, reduction = "umap", split.by = "condition")
+
+# Identify conserved cell type markers (differential gene expression)
+# For performing differential expression after integration, we switch back to the original
+# data
+DefaultAssay(combined) <- "RNA"
+nk.markers <- FindConservedMarkers(combined, ident.1 = 6, grouping.var = "condition", verbose = FALSE)
+head(nk.markers)
+# !!!!!!!!!!!! erreur !!!!!!!!!
+
+
+
+
+mat = as.matrix(tab_project %>% column_to_rownames(var = "gene"))
+mat_t = t(mat)
+
+# Tracé du heatmap
+
+heatmaply(x = mat_t,
+          show_dendrogram = c(FALSE,FALSE),
+          colors = viridis(n=100, option = "magma"),
+          column_text_angle = -90,
+          subplot_widths = 1,
+          subplot_heights = 0.15,
+          plot_method = "plotly",
+          fontsize_col = 16,
+          colorbar_len = 0.15,
+          colorbar_xpos = 1,
+          colorbar_ypos = 0.43,
+          height = 1200,
+          width = 2500)
+
+
+```
+

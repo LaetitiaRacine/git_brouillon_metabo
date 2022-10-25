@@ -1,0 +1,210 @@
+---
+title: "scATACseq_ind_NormalizationReduction"
+author: "Laëtitia Racine"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+---
+
+```{r, Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, Dependencies, warning=F, message=F}
+
+library(Signac)
+library(Seurat)
+library(gridExtra)
+library(grid)
+
+```
+
+```{r, Working directories and external script}
+
+directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory_exp = paste0(directory, "exp/")
+directory_data = paste0(directory, "data/scATACseq/")
+directory_bin = paste0(directory, "bin/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"scATACseq_ind_NormalizationReduction/"))
+dir.create(path = paste0(directory_exp,"scATACseq_ind_NormalizationReduction/", current_date))
+directory_output = paste0(directory_exp, "scATACseq_ind_NormalizationReduction/", current_date, "/")
+
+# Load external script with functions and constantes 
+source(file = paste0(directory_bin, "functions_constantes.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory_exp, "scATACseq_ind_QualityControl/"))
+list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_obj_annot_qc_filtered.rds"))
+
+```
+
+```{r, Normalization, message=F, warning=F, results = 'hold', fig.width=16, fig.height=6}
+
+list_graphs = list()
+
+lsi_norm = function(seurat_obj) {
+  
+  seurat_obj <- RunTFIDF(seurat_obj)
+  seurat_obj <- FindTopFeatures(seurat_obj, min.cutoff = 'q0') 
+  seurat_obj <- RunSVD(seurat_obj)
+
+  plot_dim_depth = DepthCor(object = seurat_obj, assay ="peaks", reduction = "lsi", n = NULL) + 
+    geom_hline(yintercept = -0.7, linetype = "dashed", color = "red") +
+    geom_hline(yintercept = + 0.7, linetype = "dashed", color = "red")
+
+  plot_dim_elb = ElbowPlot(object = seurat_obj, ndims = 50, reduction = "lsi") + 
+    ylim(0.2, 3) +
+    theme(plot.background = element_rect(fill = "white"))
+  
+  results = list (plot_dim_depth = plot_dim_depth,
+                  plot_dim_elb = plot_dim_elb,
+                  seurat_obj = seurat_obj)
+}
+
+for (i in 1:length(list_seurat_obj)) {
+  
+  temp = lsi_norm(list_seurat_obj[[i]])
+  
+  list_graphs[[names(list_seurat_obj[i])]] = list("plot_dim_depth" = temp$plot_dim_depth,
+                                                  "plot_dim_elb" = temp$plot_dim_elb)
+    
+  list_seurat_obj[[i]] = temp$seurat_obj
+  
+}
+
+for (i in 1:length(list_seurat_obj)) {
+  
+  grid.arrange(grobs = list_graphs[[i]], 
+               ncol = 2, 
+               nrow = 1,
+               top = textGrob(paste("Dimensions choice for", names(list_seurat_obj[i]))))
+
+}
+
+```
+
+```{r, Dimension choice}
+
+print("We chose dimensions 2 --> 30 for downstream analysis")
+dims_choice = c(2:30)
+
+```
+
+```{r}
+
+# save_normalize = list_seurat_obj
+
+```
+
+```{r, UMAP Reduction, results = 'hold', fig.width=16, fig.height=10}
+
+reduction_possibility = function(seurat_obj, dims_choice) {
+  
+  # Autre réduction de dimension pour la visualisation des données
+  seurat_obj <- RunUMAP(object = seurat_obj, reduction = 'lsi', dims = dims_choice)
+  seurat_obj <- FindNeighbors(object = seurat_obj, reduction = 'lsi', dims = dims_choice)
+  
+  # Tester différentes résolution pour trouver la "granularité" la plus adéquate
+  for (res in c(0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.1, 0.5, 1)) {
+    seurat_obj <- FindClusters(
+      object = seurat_obj, 
+      graph.name = "peaks_snn", 
+      resolution = res, 
+      algorithm = 3)
+  }
+  
+  # Recalcul des clusters selon les différentes résolution testées
+  plot_resolution = plot_grid(
+    ncol = 3, 
+    nrow = 4,
+    DimPlot(seurat_obj, reduction = "umap", group.by = "peaks_snn_res.0.01") + ggtitle("Resolution_0.01"),
+    DimPlot(seurat_obj, reduction = "umap", group.by = "peaks_snn_res.0.02") + ggtitle("Resolution_0.02"),
+    DimPlot(seurat_obj, reduction = "umap", group.by = "peaks_snn_res.0.03") + ggtitle("Resolution_0.03"),
+    DimPlot(seurat_obj, reduction = "umap", group.by = "peaks_snn_res.0.04") + ggtitle("Resolution_0.04"),
+    DimPlot(seurat_obj, reduction = "umap", group.by = "peaks_snn_res.0.05") + ggtitle("Resolution_0.05"),
+    DimPlot(seurat_obj, reduction = "umap", group.by = "peaks_snn_res.0.06") + ggtitle("Resolution_0.06"),
+    DimPlot(seurat_obj, reduction = "umap", group.by = "peaks_snn_res.0.07") + ggtitle("Resolution_0.07"),
+    DimPlot(seurat_obj, reduction = "umap", group.by = "peaks_snn_res.0.1") + ggtitle("Resolution_0.1"),
+    DimPlot(seurat_obj, reduction = "umap", group.by = "peaks_snn_res.0.5") + ggtitle("Resolution_0.5"),
+    DimPlot(seurat_obj, reduction = "umap", group.by = "peaks_snn_res.1") + ggtitle("Resolution_1"))
+  
+  results = list(plot_resolution = plot_resolution,
+                 seurat_obj = seurat_obj)
+  
+  return(results)
+  
+}
+
+for (i in 1:length(list_seurat_obj)) {
+  
+  temp = reduction_possibility(list_seurat_obj[[i]], dims_choice)
+  
+  list_graphs[[names(list_seurat_obj[i])]] = append(
+    list_graphs[[names(list_seurat_obj[i])]],
+    list("plot_resolution" = temp$plot_resolution)
+  )
+
+  list_seurat_obj[[i]] = temp$seurat_obj
+  
+}
+
+for (i in 1:length(list_seurat_obj)) {
+ print(list_graphs[[i]]$plot_resolution)
+}
+
+```
+
+```{r}
+
+# save_reduc = list_seurat_obj
+
+```
+
+```{r, Resolution choice}
+
+print("We chose resolution 0.06 for downstream analysis")
+resolution = "peaks_snn_res.0.06"
+
+reduction_choice = function(seurat_obj) { # à la main je n'ai pas réussi à l'automatiser à voir pour plus tar
+  seurat_obj@meta.data$seurat_clusters = seurat_obj@meta.data$peaks_snn_res.0.06
+  seurat_obj@meta.data$peaks_snn_res.0.01 <- NULL
+  seurat_obj@meta.data$peaks_snn_res.0.02 <- NULL
+  seurat_obj@meta.data$peaks_snn_res.0.03 <- NULL
+  seurat_obj@meta.data$peaks_snn_res.0.04 <- NULL
+  seurat_obj@meta.data$peaks_snn_res.0.05 <- NULL
+  seurat_obj@meta.data$peaks_snn_res.0.07 <- NULL
+  seurat_obj@meta.data$peaks_snn_res.0.1 <- NULL
+  seurat_obj@meta.data$peaks_snn_res.0.5 <- NULL
+  seurat_obj@meta.data$peaks_snn_res.1 <- NULL
+  return(seurat_obj)
+}
+
+for (i in 1:length(list_seurat_obj)) {
+  list_seurat_obj[[i]] = reduction_choice(list_seurat_obj[[i]])
+}
+
+```
+
+```{r, Save}
+
+saveRDS(object = list_seurat_obj, file = paste0(directory_output, "list_seurat_obj_annot_qc_filtered_normalized_reduced.rds"))
+
+```
+
+```{r, Rsession}
+
+rm(list = ls())
+sessionInfo()
+
+```

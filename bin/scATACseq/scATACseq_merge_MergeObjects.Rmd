@@ -1,0 +1,169 @@
+---
+title: "scATACseq_merge_MergeObjects"
+author: "Laëtitia Racine"
+date: "2022-09-02"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "show"
+    toc: true
+    theme: journal
+---
+
+```{r, Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, Dependencies, warning=F, message=F}
+
+library(Seurat)
+library(Signac)
+library(GenomicRanges) # function width()
+library(stringr)
+
+```
+
+```{r, Working directories and external script}
+
+directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory_exp = paste0(directory, "exp/")
+directory_data = paste0(directory, "data/scATACseq/")
+directory_bin = paste0(directory, "bin/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"scATACseq_merge_MergeObjects/"))
+dir.create(path = paste0(directory_exp,"scATACseq_merge_MergeObjects/", current_date))
+directory_output = paste0(directory_exp, "scATACseq_merge_MergeObjects/", current_date, "/")
+
+# Load external script with functions and constantes 
+source(file = paste0(directory_bin, "functions_constantes.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory_exp, "scATACseq_ind_QualityControl/"))
+list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_obj_annot_qc_filtered.rds"))
+
+# List of files available in data folder
+fragment_list = list.files(path = directory_data, pattern = "fragments.tsv.gz$")
+
+```
+
+
+Il faut merger les conditions AVANT de normaliser les fichiers.
+Après le merge, les normalisations et réductions qui avaient été appliquées ont disparues. 
+Si on normalise les fichiers individuels, c'est pour faire une étude individuelle sans comparaison entre les conditions.
+L'étude indiviuelle peut éventuellement être possible à partir du fichier merged.
+
+https://satijalab.org/signac/articles/merging.html
+
+On veut garder les filtres qualité qui ont été appliqués sur les objets individuels.
+On part donc des granges des objets seurat : peaks filtrés pour garder seulement les chromosomes standards. 
+On part aussi de la matrice de count qui est dans l'objet seurat pour extraire le nom des cellules et garder seulement celles qu'on a décidé. 
+We chose to use reduce function. 
+
+```{r, Number of peaks before merging}
+
+cat("Number of cells in each condition : \n",
+    names(list_seurat_obj[1]), ncol(x = list_seurat_obj[[1]]), "\n",
+    names(list_seurat_obj[2]), ncol(x = list_seurat_obj[[2]]), "\n",
+    names(list_seurat_obj[3]), ncol(x = list_seurat_obj[[3]]), "\n",
+    names(list_seurat_obj[4]), ncol(x = list_seurat_obj[[4]]), "\n",
+    "Number of peaks set in each condition : \n",
+    names(list_seurat_obj[1]), nrow(x = list_seurat_obj[[1]]), "\n",
+    names(list_seurat_obj[2]), nrow(x = list_seurat_obj[[2]]), "\n",
+    names(list_seurat_obj[3]), nrow(x = list_seurat_obj[[3]]), "\n",
+    names(list_seurat_obj[4]), nrow(x = list_seurat_obj[[4]]), "\n"
+)
+
+```
+
+```{r, Merge with common list of peaks}
+
+# Create a unified set of peaks to quantify in each dataset
+combined.peaks = reduce(x = c(
+  list_seurat_obj[[1]]@assays$peaks@ranges,
+  list_seurat_obj[[2]]@assays$peaks@ranges,
+  list_seurat_obj[[3]]@assays$peaks@ranges,
+  list_seurat_obj[[4]]@assays$peaks@ranges
+  )) # à "automatiser"
+
+# Filter out bad peaks based on length
+peakwidths <- width(combined.peaks)
+combined.peaks <- combined.peaks[peakwidths  < 10000 & peakwidths > 20]
+combined.peaks
+
+list_seurat_combined = list()
+
+for (i in 1:length(list_seurat_obj)) {
+  
+  frags <- CreateFragmentObject(
+    path = paste0(directory_data, str_subset(string = fragment_list, pattern = names(list_seurat_obj[i]))),
+    cells = colnames(list_seurat_obj[[i]])
+    )
+  
+  matrix = FeatureMatrix(
+    fragments = frags,
+    features = combined.peaks,
+    cells = colnames(list_seurat_obj[[i]])
+  )
+  
+  assay = CreateChromatinAssay(counts = matrix,
+                               fragments = frags,
+                               genome = "hg38")
+  
+  seurat = CreateSeuratObject(counts = assay,
+                              assay = "peaks", # not a good idea to change the name, it complicates the use of functions
+                              meta.data = list_seurat_obj[[i]]@meta.data)
+  
+  seurat$orig.ident = names(list_seurat_obj[i])
+    
+  list_seurat_combined[[names(list_seurat_obj[i])]] = seurat
+  
+} # très très long ! 
+
+seurat_common_merged = merge(
+  x = list_seurat_combined[[1]],
+  y = list_seurat_combined[c(-1)],
+  add.cell.ids = names(list_seurat_combined),
+  project = "10XscATAC-seq"
+)
+
+Idents(object = seurat_common_merged) <- seurat_common_merged$orig.ident
+
+cat("Total number of cells in dataset : ", ncol(seurat_common_merged), "\n",
+    "Total number of peaks in common set of features : ", nrow(seurat_common_merged))
+
+```
+
+```{r, Merge without common list of peaks}
+
+seurat_merged = merge(x = list_seurat_obj[[1]], 
+                      y = list_seurat_obj[c(-1)],
+                      project = "10XscATAC-seq")
+
+Idents(object = seurat_merged) <- seurat_merged$orig.ident
+
+cat("Total number of cells in dataset : ", ncol(seurat_merged), "\n",
+    "Total number of peaks in set of features : ", nrow(seurat_merged))
+
+```
+
+```{r, Save outputs}
+
+saveRDS(seurat_common_merged, paste0(directory_output, "seurat_obj_qc_common_merged.rds"))
+saveRDS(seurat_merged, paste0(directory_output, "seurat_obj_qc_merged.rds"))
+
+```
+
+```{r, Rsession}
+
+# Clean working space and show package version
+rm(list = ls())
+sessionInfo()
+
+```
+
+

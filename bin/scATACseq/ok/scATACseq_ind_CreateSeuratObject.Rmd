@@ -1,0 +1,175 @@
+---
+title: "scATACseq_ind_CreateSeuratObject"
+author: "Laëtitia Racine"
+date: "2022-09-22"
+subtitle: "Dernière modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r, Setup, include=F}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Signac)
+library(Seurat)
+library(stringr)
+library(EnsDb.Hsapiens.v86)   # v.86 = hg38 | v.75 = hg19
+library(GenomeInfoDb)
+library(knitr)
+
+```
+
+```{r, Working directories and external script}
+
+# directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory = "/home/rparmentier/Bureau/git_brouillon_metabo/"
+directory_exp = paste0(directory, "exp/")
+directory_data = paste0(directory, "data/scATACseq/")
+directory_bin = paste0(directory, "bin/")
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory_exp,"scATACseq_ind_CreateSeuratObject/"))
+dir.create(path = paste0(directory_exp,"scATACseq_ind_CreateSeuratObject/", current_date))
+directory_output = paste0(directory_exp, "scATACseq_ind_CreateSeuratObject/", current_date, "/")
+
+# Load external script with functions and constantes
+source(file = paste0(directory_bin, "functions_constantes.R"))
+
+```
+
+```{r, Input loading}
+
+# List of files available in data folder : CellRanger output files from folder filtered_peak_bc_matrix.
+matrix_list = list.files(path = directory_data, pattern = ".h5")
+sc_list = list.files(path = directory_data, pattern = "singlecell.csv")
+fragment_list = list.files(path = directory_data, pattern = "fragments.tsv.gz$")
+
+# Extract number and names of conditions
+if (length(matrix_list) == length(sc_list) & length(sc_list) == length(fragment_list)) {
+  number_condition = length(matrix_list)
+} else { print("Files missing, check data folder") }
+list_condition = str_extract(string = sc_list, pattern = "[:alnum:]+(?=_singlecell.csv)")
+
+```
+
+```{r, Create seurat object}
+
+# Function definition
+create_seurat_obj = function(matrixh5, singlecell, fragments) {
+
+  counts <- Seurat::Read10X_h5(filename = matrixh5)
+
+  metadata <- read.csv(
+    file = singlecell,
+    header = TRUE,
+    row.names = 1
+  )
+
+  chrom_assay <- CreateChromatinAssay(
+    counts = counts,
+    sep = c(":", "-"),
+    genome = 'hg38',
+    fragments = fragments,
+    min.cells = 100,
+    min.features = 200
+  )
+
+  seurat_obj <- CreateSeuratObject(
+    counts = chrom_assay,
+    assay = "peaks",
+    meta.data = metadata)
+
+  return(seurat_obj)
+}
+
+
+# Call function to create objects and store in a list
+list_seurat_obj = list()
+
+for (i in 1:number_condition) {
+
+  list_seurat_obj[list_condition[i]] = create_seurat_obj(
+    matrixh5 = paste0(directory_data, str_subset(string = matrix_list, pattern = list_condition[i])),
+    singlecell = paste0(directory_data, str_subset(string = sc_list, pattern = list_condition[i])),
+    fragments = paste0(directory_data, str_subset(string = fragment_list, pattern = list_condition[i]))
+  )
+
+  print(paste(list_condition[i], "seurat obj created"))
+
+}
+
+```
+
+```{r, Visualize seurat object}
+
+# Visualize the control object of the list to see the structure
+## global structure
+list_seurat_obj["CTRL"]
+## chromatin assay with the peaks
+list_seurat_obj[["CTRL"]]@assays$peaks
+## list of peaks from chromatin assay
+list_seurat_obj[["CTRL"]]@assays$peaks@ranges
+## raw count matrix store in counts.slot (first 10 rows and column)
+as.data.frame(list_seurat_obj[["CTRL"]]@assays$peaks@counts)[1:10, 1:10]
+## normalized count matrix store in data.slot (first 10 rows and column)
+as.data.frame(list_seurat_obj[["CTRL"]]@assays$peaks@data)[1:10, 1:10]
+# => same as the raw matrix because the normalization is not done yet
+
+```
+
+```{r, Add annotations}
+
+# Extract annotations from EnsDb database
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86, standard.chromosomes = TRUE)
+seqlevelsStyle(annotations) = "UCSC"
+print(table(annotations$type))
+
+# Add annotation database into seurat object (needed for downstream analysis (QC functions))
+for (i in 1:number_condition) { Annotation(list_seurat_obj[[i]]) = annotations }
+
+# Visualize first object of the list to see the annotations
+list_seurat_obj[["CTRL"]]@assays$peaks@annotation
+
+```
+
+```{r, Update orig.ident}
+
+for (i in 1:number_condition) {
+  Idents(object = list_seurat_obj[[i]]) = names(list_seurat_obj[i])
+  list_seurat_obj[[i]]$orig.ident = names(list_seurat_obj[i])
+}
+
+# Visualize first object of the list to see the metadata
+list_seurat_obj[["CTRL"]]@meta.data
+
+```
+
+```{r, Save output}
+
+saveRDS(object = list_seurat_obj, file = paste0(directory_output, "list_seurat_obj_annot.rds"))
+
+```
+
+```{r, Rsession}
+
+# Clean working space and show package version
+rm(list = ls())
+sessionInfo()
+
+```
