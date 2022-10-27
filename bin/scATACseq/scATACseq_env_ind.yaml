@@ -1,0 +1,7 @@
+name: scATACseq_env_ind
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  

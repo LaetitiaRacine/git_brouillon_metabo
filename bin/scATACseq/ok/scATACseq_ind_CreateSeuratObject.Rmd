@@ -37,7 +37,8 @@ library(knitr)
 ```{r, Working directories and external script}
 
 # directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
-directory = "/home/rparmentier/Bureau/git_brouillon_metabo/"
+# directory = "/home/rparmentier/Bureau/git_brouillon_metabo/"
+directory = "/home/lracine/Documents/git_brouillon_metabo/"
 directory_exp = paste0(directory, "exp/")
 directory_data = paste0(directory, "data/scATACseq/")
 directory_bin = paste0(directory, "bin/")

@@ -1,0 +1,19 @@
+name: scATACseq_10X_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bioconductor-brgenomics
+  - bioconductor-ensdb.hsapiens.v86
+  - bioconductor-genomeinfodb
+  - bioconductor-biovizbase
+  - r-base
+  - r-docopt
+  - r-dplyr
+  - r-ggplot2
+  - r-gridextra
+  - r-seurat
+  - r-signac
+  - r-stringr
+  - r-hdf5r

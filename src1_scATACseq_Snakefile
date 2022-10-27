@@ -1,0 +1,76 @@
+# Commande pour lancer le script (se placer dans le dossier contenant le snakefile):
+# snakemake -s src1_scATACseq_Snakefile --use-conda --reason --cores 12 (ou 16 selon l'ordinateur)
+
+from snakemake.io import expand
+
+SAMPLE = ['CTRL', 'DON', '2DG', 'AOA']
+
+#wildcard_constraints:
+#	donor="D\d+",
+#	donors="D\d+(,D\d+)+",
+#	sample="\w+_\d{2}h_D\d+"
+
+
+rule all :
+	input :
+		expand("exp/scATACseq/{sample}_seurat_obj_annot.rds", sample = SAMPLE),
+		expand("exp/scATACseq/{sample}_seurat_obj_annot_qc.rds", sample = SAMPLE),
+		expand("exp/scATACseq/{sample}_seurat_obj_annot_qc_filtered.rds", sample = SAMPLE),
+		expand("exp/scATACseq/{sample}_qc_plot.svg", sample = SAMPLE),
+		expand("exp/scATACseq/{sample}_qc_filter.csv", sample = SAMPLE)
+
+# ===================
+# Create output files
+# ===================
+
+rule Create_Seurat_Object :
+	input :
+		matrixh5 = "data/scATACseq/{sample}_filtered_peak_bc_matrix.h5",
+		fragment = "data/scATACseq/{sample}_fragments.tsv.gz",
+		metadata = "data/scATACseq/{sample}_singlecell.csv"
+	output : "exp/scATACseq/{sample}_seurat_obj_annot.rds"
+	conda : "env/scATACseq_10X_env.yaml"
+	shell : """ Rscript bin/scATACseq/scATACseq_SKMK_ind_CreateSeuratObject.R {input.matrixh5} {input.fragment} {input.metadata} {output}"""
+
+rule QualityControl :
+	input : "exp/scATACseq/{sample}_seurat_obj_annot.rds"
+	output :
+		seurat = "exp/scATACseq/{sample}_seurat_obj_annot_qc.rds",
+		seurat_filtered = "exp/scATACseq/{sample}_seurat_obj_annot_qc_filtered.rds",
+		plots = "exp/scATACseq/{sample}_qc_plot.svg",
+		tab = "exp/scATACseq/{sample}_qc_filter.csv"
+	conda : "env/scATACseq_10X_env.yaml"
+	shell : """ Rscript bin/scATACseq/scATACseq_SKMK_ind_QualityControl.R  {input} {output.seurat} {output.seurat_filtered} {output.plots} {output.tab} """
+
+
+### ATTENTION ! Si appel de Rmarkdown, l'output peut seulement être un html.
+
+# # ======================================
+# # Create html report to explain the code
+# # =======================================
+#
+# rule peaks_report :
+# 	input :
+# 		df_csv = expand("D_Analysis/touch/mytask_csv_{sample}.done", sample = list_sample()),
+# 		df_csv_threshold = expand("D_Analysis/touch/mytask_csv_{sample}_threshold_{value}.done", sample = list_sample(), value = THRESHOLD_TO_TEST),
+# 		readcount = expand("D_Analysis/touch/mytask_readcount_{sample}.done", sample = list_sample()),
+# 	output :
+# 		chrom = "D_Analysis/reports/nbpeaks_per_chromosome_report.csv",
+# 		glob_long = "D_Analysis/reports/nbpeaks_nbreads_long_report.csv",
+# 		glob_wide = "D_Analysis/reports/nbpeaks_nbreads_wide_report.csv",
+# 		nbpeaks = "D_Analysis/reports/nbpeaks_report.csv"
+# 	conda : "B_Environments/ATACMetabo_main_env.locked.yaml"
+# 	shell : """ Rscript C_Scripts/peaks_report.R "D_Analysis/macs2_output/" {output.chrom} {output.glob_long} {output.glob_wide} {output.nbpeaks} """
+#
+# # Draw QC plots from nbreads_report.csv and nb_peaks_report.csv
+# rule plot_reports :
+# 	wildcard_constraints:
+# 		format="hist_donor|hist_time|line_cond|line_donor|freq|chrom_single|chrom_multi",
+# 		colname="[a-zA-Z_]+",
+# 		reportname="[a-z_]+",
+# 		extension="png|pdf",
+# 		threshold="|_threshold_[0-9]+"
+# 	input :"D_Analysis/reports/{reportname}.csv"
+# 	output : "D_Analysis/reports/{reportname}_{format}-{colname}{threshold}.{extension}",
+# 	conda : "B_Environments/ATACMetabo_main_env.locked.yaml"
+# 	shell : """ Rscript C_Scripts/report_plots_separated.R -o {output} {input} {wildcards.format} {wildcards.extension} {wildcards.colname} """
