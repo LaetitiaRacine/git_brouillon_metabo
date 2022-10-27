@@ -1,0 +1,56 @@
+---
+title: "Untitled"
+author: "Laëtitia Racine"
+date: "2022-10-27"
+output: html_document
+---
+
+
+```{r}
+
+library(Seurat)
+
+directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/exp/scRNAseq_CITEseq_ind_FilterData/20221007/"
+list_seurat = readRDS(paste0(directory, "list_seurat_obj_qc.rds"))
+
+merged = merge(x = list_seurat[["CTRL"]], 
+                          y = c(list_seurat[["CTRLaK"]], 
+                                list_seurat[["DON"]],
+                                list_seurat[["DONaK"]], 
+                                list_seurat[["2DG"]],
+                                list_seurat[["2DGaK"]], 
+                                list_seurat[["VPA"]], 
+                          list_seurat[["AOA"]], 
+                          list_seurat[["CTRL2"]], 
+                          list_seurat[["AOAaK"]]),
+add.cell.ids = c(
+  "manip1", "manip1", "manip1","manip1", "manip1", "manip1", "manip1", "manip2", "manip2", "manip2")
+)
+
+rm(list_seurat)
+
+merged[["batch"]]= sapply(strsplit(colnames(merged), "_"),`[`,1)
+
+```
+
+```{r}
+
+merged_list <- SplitObject(merged, split.by = "batch")
+merged_list <- lapply(X = merged_list, FUN = SCTransform)
+features <- SelectIntegrationFeatures(object.list = merged_list, nfeatures = 3000)
+merged_list <- PrepSCTIntegration(object.list = merged_list, anchor.features = features)
+immune.anchors <- FindIntegrationAnchors(object.list = merged_list, normalization.method = "SCT",
+    anchor.features = features)
+merged <- IntegrateData(anchorset = immune.anchors, normalization.method = "SCT")
+
+merged <-RunPCA(merged)
+merged <- RunUMAP(merged,dims=1:30)
+
+DimPlot(merged)
+DimPlot(merged,group.by = "batch")
+DimPlot(merged)
+DimPlot(merged,split.by = "orig.ident")
+DimPlot(merged,split.by = "orig.ident",ncol=4)
+
+```
+
