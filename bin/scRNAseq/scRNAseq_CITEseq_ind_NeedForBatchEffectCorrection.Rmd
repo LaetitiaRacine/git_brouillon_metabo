@@ -18,6 +18,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r, Dependencies, message=F, warning=F}
 
 library(dplyr)
+library(Seurat)
+library(ggplot2)
 
 ```
 
@@ -34,34 +36,280 @@ Documentation on the subject :
 - https://satijalab.org/seurat/archive/v3.1/integration.html  
 - https://blog.bioturing.com/2022/03/24/batch-effect-in-single-cell-rna-seq-frequently-asked-questions-and-answers/  
 
-
-
+Question ask on the github forum : https://github.com/satijalab/seurat/issues/6616
 
 
 ```{r, Working directories and external script, warning=F, message=F}
 
-directory = "/home/rparmentier/Bureau/Git_Metabo_Analysis/"
+directory = "/home/lracine/Documents/git_brouillon_metabo/"
 
 # Create a unique folder for output corresponding to the date of the day
-# current_date = format(Sys.time(), "%Y%m%d")
-current_date = "20221007"
-dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_integ_IntegrateConditions/"))
-dir.create(path = paste0(directory_exp,"scRNAseq_CITEseq_integ_IntegrateConditions/", current_date))
-directory_output = paste0(directory_exp, "scRNAseq_CITEseq_integ_IntegrateConditions/", current_date, "/")
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/", "scRNAseq_CITEseq_ind_NeedForBatchEffectCorrection/"))
+dir.create(path = paste0(directory,"exp/", "scRNAseq_CITEseq_ind_NeedForBatchEffectCorrection/", current_date))
+directory_output = paste0(directory, "exp/", "scRNAseq_CITEseq_ind_NeedForBatchEffectCorrection/", current_date, "/")
 
 ```
 
 ```{r, Input loading}
 
+list_seurat_norm = readRDS(file = "/home/lracine/Documents/Git_Metabo_Analysis/exp/scRNAseq_CITEseq_ind_NormalizeData/20221007/list_seurat_obj_qc_norm.rds")
+
+# Add experiment information 
+list_seurat_norm[["CTRL"]]$batch = "batch1"
+list_seurat_norm[["DON"]]$batch = "batch1"
+list_seurat_norm[["DONaK"]]$batch = "batch1"
+list_seurat_norm[["2DG"]]$batch = "batch1"
+list_seurat_norm[["2DGaK"]]$batch = "batch1"
+list_seurat_norm[["VPA"]]$batch = "batch1"
+list_seurat_norm[["CTRLaK"]]$batch = "batch1"
+list_seurat_norm[["CTRL2"]]$batch = "batch2"
+list_seurat_norm[["AOA"]]$batch = "batch2"
+list_seurat_norm[["AOAaK"]]$batch = "batch2"
+
 ```
 
 
+## Process two experiments separately without integration. 
+Make UMAP plots where you can see how different samples group.
+https://github.com/satijalab/seurat/issues/5761
+```{r, fig.width = 20, fig.height = 14}
+
+# Merged the conditions from the same experiment and select variable features
+batch1 = c("CTRL", "CTRLaK", "DON", "DONaK", "2DG", "2DGaK", "VPA")
+list_batch1 = list_seurat_norm[batch1]
+features_batch1 <- SelectIntegrationFeatures(object.list = list_batch1, nfeatures = 3000)
+merged_batch1 = merge(x = list_seurat_norm[["CTRL"]], 
+                      y = c(list_seurat_norm[["CTRLaK"]], 
+                            list_seurat_norm[["DON"]],
+                            list_seurat_norm[["DONaK"]], 
+                            list_seurat_norm[["2DG"]],
+                            list_seurat_norm[["2DGaK"]], 
+                            list_seurat_norm[["VPA"]]))
+VariableFeatures(merged_batch1) <- features_batch1
+
+batch2 = c("CTRL2", "AOA", "AOAaK")
+list_batch2 = list_seurat_norm[batch2]
+features_batch2 <- SelectIntegrationFeatures(object.list = list_batch2, nfeatures = 3000)
+merged_batch2 = merge(x = list_seurat_norm[["CTRL2"]], 
+                      y = c(list_seurat_norm[["AOAaK"]], 
+                            list_seurat_norm[["AOA"]]))
+VariableFeatures(merged_batch2) <- features_batch2
+
+rm(list_batch1, list_batch2, batch1, batch2)
+
+# Run PCA and UMAP on each experiment
+merged_batch1 = RunPCA(object = merged_batch1,
+                       assay = "SCT",
+                       reduction.name = "pca",
+                       npcs = 100,
+                       verbose = TRUE)
+merged_batch2 = RunPCA(object = merged_batch2,
+                       assay = "SCT",
+                       reduction.name = "pca",
+                       npcs = 100,
+                       verbose = TRUE)
+
+merged_batch1 = RunUMAP(object = merged_batch1, 
+                        assay = "SCT",
+                        reduction =  "pca",
+                        dims = 1:30,
+                        reduction.name = "umap", 
+                        verbose = TRUE)
+merged_batch2 = RunUMAP(object = merged_batch2, 
+                        assay = "SCT",
+                        reduction =  "pca",
+                        dims = 1:30,
+                        reduction.name = "umap", 
+                        verbose = TRUE)
 
 
-```{r, Save outputs}
+# Show all conditions independently
+batch1_umap_plot = DimPlot(object = merged_batch1, 
+                           group.by = "orig.ident", 
+                           reduction = "umap")
+batch1_umap_split_plot = DimPlot(object = merged_batch1, 
+                                 group.by = "orig.ident", 
+                                 split.by = "orig.ident", 
+                                 reduction = "umap")
+
+batch2_umap_plot = DimPlot(object = merged_batch2, 
+                          group.by = "orig.ident", 
+                          reduction = "umap")
+batch2_umap_split_plot = DimPlot(object = merged_batch2, 
+                                group.by = "orig.ident", 
+                                split.by = "orig.ident", 
+                                reduction = "umap")
+
+batch1_umap_plot / batch1_umap_split_plot
+batch2_umap_plot / batch2_umap_split_plot
+
+# saveRDS(merged_batch1, file = paste0(directory_output, "merged_batch1_reduc.rds"))
+# saveRDS(merged_batch2, file = paste0(directory_output, "merged_batch2_reduc.rds"))
+ggsave(batch1_umap_plot / batch1_umap_split_plot, 
+       file = paste0(directory_output, "umap_batch1.png"),
+       width = 20, height = 14)
+ggsave(batch2_umap_plot / batch2_umap_split_plot, 
+       file = paste0(directory_output, "umap_batch2.png"),
+       width = 20, height = 14)
+
+rm(merged_batch1, merged_batch2, features_batch1, features_batch2)
+rm(batch1_umap_plot, batch1_umap_split_plot, batch2_umap_plot, batch2_umap_split_plot)
+gc()
+
+```
+
+## Process two experiment together without integration.
+Make same UMAP plots where you can see individual samples and experiment groups.
+```{r}
+
+# Merged all the conditions from the two experiments and select variable features
+features_all <- SelectIntegrationFeatures(object.list = list_seurat_norm, nfeatures = 3000)
+merged_all = merge(x = list_seurat_norm[["CTRL"]], 
+                      y = c(list_seurat_norm[["CTRLaK"]], 
+                            list_seurat_norm[["DON"]],
+                            list_seurat_norm[["DONaK"]], 
+                            list_seurat_norm[["2DG"]],
+                            list_seurat_norm[["2DGaK"]], 
+                            list_seurat_norm[["VPA"]],
+                            list_seurat_norm[["CTRL2"]],
+                            list_seurat_norm[["AOA"]],
+                            list_seurat_norm[["AOAaK"]]))
+VariableFeatures(merged_all) <- features_all
+
+# Run PCA and UMAP
+merged_all = RunPCA(object = merged_all,
+                       assay = "SCT",
+                       reduction.name = "pca",
+                       npcs = 100,
+                       verbose = TRUE)
+merged_all = RunUMAP(object = merged_all, 
+                        assay = "SCT",
+                        reduction =  "pca",
+                        dims = 1:30,
+                        reduction.name = "umap", 
+                        verbose = TRUE)
+
+# Show the conditions
+umap_plot = DimPlot(object = merged_all, 
+                           group.by = "orig.ident", 
+                           reduction = "umap")
+umap_plot_batch = DimPlot(object = merged_all, 
+                           group.by = "batch", 
+                           reduction = "umap")
+umap_split_plot = DimPlot(object = merged_all, 
+                                 group.by = "orig.ident", 
+                                 split.by = "orig.ident", 
+                                 reduction = "umap")
+
+umap_plot / umap_plot_batch /umap_split_plot
+
+merged_ctrl = subset(merged_all, subset = orig.ident %in% c("CTRL", "CTRL2"))
+umap_ctrl =  DimPlot(object = merged_ctrl, 
+                     group.by = "orig.ident", 
+                     reduction = "umap")
+umap_split_ctrl = DimPlot(object = merged_ctrl, 
+                                 group.by = "orig.ident", 
+                                 split.by = "orig.ident", 
+                                 reduction = "umap")
+umap_ctrl / umap_split_ctrl
+
+# saveRDS(merged_all, file = paste0(directory_output, "merged_all_reduc.rds"))
+ggsave(umap_plot / umap_plot_batch, 
+       file = paste0(directory_output, "umap_bothbatch.png"),
+       width = 20, height = 14)
+ggsave(umap_split_plot, 
+       file = paste0(directory_output, "umap_bothbatch_split.png"),
+       width = 20, height = 8)
+ggsave(umap_ctrl / umap_split_ctrl, 
+       file = paste0(directory_output, "umap_bothbatch_ctrl.png"),
+       width = 20, height = 14)
+
+rm(merged_all, merged_ctrl, features_all)
+rm(umap_ctrl, umap_split_ctrl, umap_plot, umap_plot_batch, umap_split_plot)
+gc()
+
+```
+
+## Work only with the controls on SCT
+```{r, fig.width = 12, fig.height = 14}
+
+# Extract the two controls from the list of seurat object
+CTRL_manip1 = list_seurat_norm[["CTRL"]]
+CTRL_manip2 = list_seurat_norm[["CTRL2"]]
+
+# Merged all the conditions from the two experiments and select variable features
+features_ctrl <- SelectIntegrationFeatures(object.list = list(CTRL_manip1, CTRL_manip2), nfeatures = 3000)
+merged = merge(x = CTRL_manip1, y = CTRL_manip2)
+VariableFeatures(merged) <- features_ctrl
+
+# Run PCA and UMAP
+merged = RunPCA(object = merged,
+                       assay = "SCT",
+                       reduction.name = "pca",
+                       npcs = 100,
+                       verbose = TRUE)
+merged = RunUMAP(object = merged, 
+                        assay = "SCT",
+                        reduction =  "pca",
+                        dims = 1:30,
+                        reduction.name = "umap", 
+                        verbose = TRUE)
+
+# Show the ocnditions
+ctrl_umap_plot = DimPlot(object = merged, 
+                           group.by = "orig.ident", 
+                           reduction = "umap")
+ctrl_split_plot = DimPlot(object = merged, 
+                                 group.by = "orig.ident", 
+                                 split.by = "orig.ident", 
+                                 reduction = "umap")
+
+ctrl_umap_plot / ctrl_split_plot
+
+ggsave(ctrl_umap_plot / ctrl_split_plot, 
+       file = paste0(directory_output, "umap_ctrl_merged_sct.png"),
+       width = 20, height = 14)
 
 
 ```
+
+## Work with only the controls on logNormalisation
+```{r, fig.width = 14, fig.height = 16}
+
+# Extract the two controls from the list of seurat object
+CTRL_manip1 = list_seurat_norm[["CTRL"]]
+CTRL_manip2 = list_seurat_norm[["CTRL2"]]
+
+# Merge both control objects
+CTRL_merged = merge(x = CTRL_manip1, 
+                    y = CTRL_manip2, 
+                    add.cell.ids = c("CTRL1", "CTRL2"))
+
+# Visualize control objects in UMAP and PCA
+DefaultAssay(CTRL_merged) = "RNA"
+CTRL_merged = NormalizeData(CTRL_merged)
+CTRL_merged = FindVariableFeatures(CTRL_merged)
+CTRL_merged = ScaleData(CTRL_merged)
+CTRL_merged = RunPCA(CTRL_merged, npcs = 30)
+CTRL_merged = RunUMAP(CTRL_merged, reduction = "pca", dims = 1:30)
+
+umap_batch = DimPlot(object = CTRL_merged, 
+                     group.by = "orig.ident", 
+                    reduction = "umap")
+umap_split = DimPlot(object = CTRL_merged, 
+                     group.by = "orig.ident",
+                    split.by = "orig.ident", 
+                    reduction = "umap") + NoLegend()
+
+umap_batch | umap_split
+
+ggsave(umap_batch / umap_split, 
+       file = paste0(directory_output, "umap_ctrl_merged_log.png"),
+       width = 20, height = 14)
+
+```
+
 
 ```{r, Rsession}
 
