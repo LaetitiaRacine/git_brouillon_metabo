@@ -8,7 +8,7 @@ start.time <- Sys.time()
 "Apply quality control filter on the dataset
 
 Usage:
-  scATACseq_SKMK_ind_QualityControl.R [options] <seurat_obj> <output_seurat> <output_seurat_filtered> <output_plots> <output_tab>
+  scATACseq_SKMK_ind_QualityControl.R [options] <cond> <seurat_obj> <output_seurat> <output_seurat_filtered> <output_plots> <output_tab>
   scATACseq_SKMK_ind_QualityControl.R -h | --help
 
 Options:
@@ -17,6 +17,12 @@ Options:
 
 library(docopt)
 arguments <- docopt(doc)
+#arguments <- list(cond="2DG",
+#                  seurat_obj="exp/scATACseq/2DG_seurat_obj_annot.rds",
+#                  output_seurat="exp/scATACseq/2DG_seurat_obj_annot_qc.rds",
+#                  output_seurat_filtered="exp/scATACseq/2DG_seurat_obj_annot_qc_filtered.rds",
+#                  output_plots="exp/scATACseq/2DG_qc_plot.svg",
+#                  output_tab="exp/scATACseq/2DG_qc_filter.csv")
 
 
 #*************
@@ -37,7 +43,7 @@ library(BRGenomics) # function tidyChromosomes()
 #**************
 
 seurat_obj = readRDS(file = arguments$seurat_obj)
-name_cond = 
+name_cond = arguments$cond
 
   
 #************************
@@ -133,8 +139,8 @@ seurat_obj$high.tss = ifelse(seurat_obj$TSS.enrichment > 2, 'High', 'Low')
 seurat_obj$pct_reads_in_TSS = seurat_obj$TSS_fragments / seurat_obj$passed_filters * 100
   
 qc_plot_tss = TSSPlot(seurat_obj, group.by = 'high.tss') + 
-    NoLegend()
-  labs(title = "TSS enrichment score") +
+    NoLegend() +
+    labs(title = "TSS enrichment score") +
     theme(title = element_text(face = "bold"))
   
 qc_plot_tss_reads =  qplot(seurat_obj$pct_reads_in_TSS, seurat_obj$pct_reads_in_peaks) +
@@ -146,7 +152,7 @@ qc_plot_tss_reads =  qplot(seurat_obj$pct_reads_in_TSS, seurat_obj$pct_reads_in_
 # Visualize QC metrics
 #*********************
 
-list_graph = c(qc_plot_nucl_fragments, qc_plot_nucl_signal, qc_plot_nucl_quality,
+list_graph = list(qc_plot_nucl_fragments, qc_plot_nucl_signal, qc_plot_nucl_quality,
               qc_plot_pct_reads_vln, qc_plot_pct_reads_point, qc_plot_blacklist,
               qc_plot_peak_region_fragments, qc_plot_tss, qc_plot_tss_reads)
 grid.arrange(grobs = list_graph, 
@@ -198,12 +204,6 @@ df_filter$Blacklist_filter =  c(ncol(seurat_obj), nrow(seurat_obj))
 seurat_obj =  subset(x = seurat_obj, subset = TSS.enrichment > 2)
 df_filter$TSS_filter =  c(ncol(seurat_obj), nrow(seurat_obj))
 
-# Show summary of applied filters
-df_filter %>%
-  kable(caption = "Remaining cells after cumulative QC filters") %>%
-  kable_styling() %>%
-  scroll_box(width = "100%", height = "250px")
-
 ## Clean chromosome list - Keep only standard chromosomes
 seurat_obj@assays$peaks@ranges = tidyChromosomes(gr = seurat_obj@assays$peaks@ranges,
                                                  keep.X = TRUE,
@@ -223,7 +223,7 @@ df_filter
 #************
 
 saveRDS(object = seurat_obj, file = arguments$output_seurat_filtered)
-write.table(object = df_filter, file = arguments$output_tab)
+write.table(x = df_filter, file = arguments$output_tab)
 
 #**********
 # Rsession

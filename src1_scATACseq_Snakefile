@@ -33,6 +33,8 @@ rule Create_Seurat_Object :
 	shell : """ Rscript bin/scATACseq/scATACseq_SKMK_ind_CreateSeuratObject.R {input.matrixh5} {input.fragment} {input.metadata} {output}"""
 
 rule QualityControl :
+	resources:
+		mem_mb=20000
 	input : "exp/scATACseq/{sample}_seurat_obj_annot.rds"
 	output :
 		seurat = "exp/scATACseq/{sample}_seurat_obj_annot_qc.rds",
@@ -40,7 +42,7 @@ rule QualityControl :
 		plots = "exp/scATACseq/{sample}_qc_plot.svg",
 		tab = "exp/scATACseq/{sample}_qc_filter.csv"
 	conda : "env/scATACseq_10X_env.yaml"
-	shell : """ Rscript bin/scATACseq/scATACseq_SKMK_ind_QualityControl.R  {input} {output.seurat} {output.seurat_filtered} {output.plots} {output.tab} """
+	shell : """ Rscript bin/scATACseq/scATACseq_SKMK_ind_QualityControl.R {wildcards.sample} {input} {output.seurat} {output.seurat_filtered} {output.plots} {output.tab} """
 
 
 ### ATTENTION ! Si appel de Rmarkdown, l'output peut seulement être un html.
