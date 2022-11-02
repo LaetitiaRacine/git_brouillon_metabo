@@ -288,7 +288,7 @@ CTRL_merged = merge(x = CTRL_manip1,
 
 # Visualize control objects in UMAP and PCA
 DefaultAssay(CTRL_merged) = "RNA"
-CTRL_merged = NormalizeData(CTRL_merged)
+# CTRL_merged = NormalizeData(CTRL_merged)
 CTRL_merged = FindVariableFeatures(CTRL_merged)
 CTRL_merged = ScaleData(CTRL_merged)
 CTRL_merged = RunPCA(CTRL_merged, npcs = 30)
