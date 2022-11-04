@@ -166,29 +166,29 @@ Make same UMAP plots where you can see individual samples and experiment groups.
 # Merged all the conditions from the two experiments and select variable features
 features_all <- SelectIntegrationFeatures(object.list = list_seurat_norm, nfeatures = 3000)
 merged_all = merge(x = list_seurat_norm[["CTRL"]], 
-                      y = c(list_seurat_norm[["CTRLaK"]], 
-                            list_seurat_norm[["DON"]],
-                            list_seurat_norm[["DONaK"]], 
-                            list_seurat_norm[["2DG"]],
-                            list_seurat_norm[["2DGaK"]], 
-                            list_seurat_norm[["VPA"]],
-                            list_seurat_norm[["CTRL2"]],
-                            list_seurat_norm[["AOA"]],
-                            list_seurat_norm[["AOAaK"]]))
+                   y = c(list_seurat_norm[["CTRLaK"]], 
+                         list_seurat_norm[["DON"]],
+                         list_seurat_norm[["DONaK"]], 
+                         list_seurat_norm[["2DG"]],
+                         list_seurat_norm[["2DGaK"]], 
+                         list_seurat_norm[["VPA"]],
+                         list_seurat_norm[["CTRL2"]],
+                         list_seurat_norm[["AOA"]],
+                         list_seurat_norm[["AOAaK"]]))
 VariableFeatures(merged_all) <- features_all
 
 # Run PCA and UMAP
 merged_all = RunPCA(object = merged_all,
-                       assay = "SCT",
-                       reduction.name = "pca",
-                       npcs = 100,
-                       verbose = TRUE)
+                    assay = "SCT",
+                    reduction.name = "pca",
+                    npcs = 100,
+                    verbose = TRUE)
 merged_all = RunUMAP(object = merged_all, 
-                        assay = "SCT",
-                        reduction =  "pca",
-                        dims = 1:30,
-                        reduction.name = "umap", 
-                        verbose = TRUE)
+                     assay = "SCT",
+                     reduction =  "pca",
+                     dims = 1:30,
+                     reduction.name = "umap", 
+                     verbose = TRUE)
 
 # Show the conditions
 umap_plot = DimPlot(object = merged_all, 
@@ -209,9 +209,10 @@ umap_ctrl =  DimPlot(object = merged_ctrl,
                      group.by = "orig.ident", 
                      reduction = "umap")
 umap_split_ctrl = DimPlot(object = merged_ctrl, 
-                                 group.by = "orig.ident", 
-                                 split.by = "orig.ident", 
-                                 reduction = "umap")
+                          group.by = "orig.ident", 
+                          split.by = "orig.ident", 
+                          reduction = "umap",
+                          ncol = 5)
 umap_ctrl / umap_split_ctrl
 
 # saveRDS(merged_all, file = paste0(directory_output, "merged_all_reduc.rds"))
