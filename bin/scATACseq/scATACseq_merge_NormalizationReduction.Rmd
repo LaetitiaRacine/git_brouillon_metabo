@@ -139,26 +139,46 @@ resolution_umap = function(seurat_obj) {
   
   plot_resolution = plot_grid(
     ncol = 3, 
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.01") + ggtitle("Resolution_0.01"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.02") + ggtitle("Resolution_0.02"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.03") + ggtitle("Resolution_0.03"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.04") + ggtitle("Resolution_0.04"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.05") + ggtitle("Resolution_0.05"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.06") + ggtitle("Resolution_0.06"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.07") + ggtitle("Resolution_0.07"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.08") + ggtitle("Resolution_0.08"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.09") + ggtitle("Resolution_0.09"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.1") + ggtitle("Resolution_0.1"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.2") + ggtitle("Resolution_0.2"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.25") + ggtitle("Resolution_0.25"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.3") + ggtitle("Resolution_0.3"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.4") + ggtitle("Resolution_0.4"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.5") + ggtitle("Resolution_0.5"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.6") + ggtitle("Resolution_0.6"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.7") + ggtitle("Resolution_0.7"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.8") + ggtitle("Resolution_0.8"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.9") + ggtitle("Resolution_0.9"),
-    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.1") + ggtitle("Resolution_1"))
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.01") + 
+      ggtitle("Resolution_0.01"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.02") + 
+      ggtitle("Resolution_0.02"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.03") + 
+      ggtitle("Resolution_0.03"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.04") + 
+      ggtitle("Resolution_0.04"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.05") + 
+      ggtitle("Resolution_0.05"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.06") + 
+      ggtitle("Resolution_0.06"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.07") + 
+      ggtitle("Resolution_0.07"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.08") + 
+      ggtitle("Resolution_0.08"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.09") + 
+      ggtitle("Resolution_0.09"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.1") + 
+      ggtitle("Resolution_0.1"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.2") + 
+      ggtitle("Resolution_0.2"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.25") + 
+      ggtitle("Resolution_0.25"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.3") + 
+      ggtitle("Resolution_0.3"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.4") + 
+      ggtitle("Resolution_0.4"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.5") + 
+      ggtitle("Resolution_0.5"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.6") + 
+      ggtitle("Resolution_0.6"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.7") + 
+      ggtitle("Resolution_0.7"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.8") + 
+      ggtitle("Resolution_0.8"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.0.9") + 
+      ggtitle("Resolution_0.9"),
+    DimPlot(seurat_obj, label = TRUE, reduction = "umap", group.by = "peaks_snn_res.1") + 
+      ggtitle("Resolution_1"))
 
   print(plot_resolution)
   return(plot_resolution)
@@ -204,6 +224,8 @@ seurat_merged_globumap = global_umap(seurat_merged)
 
 ```{r, Visualize individual cond, warning=F, fig.height = 10, fig.width = 8}
 
+seurat_obj = seurat_common_merged
+
 ind_umap = function(seurat_obj) {
   
   list_plot = list() 
@@ -221,14 +243,25 @@ ind_umap = function(seurat_obj) {
   cell_nohighlight = unlist(CellsByIdentities(object = seurat_obj, idents = others_cond))
 
   # Plot 
+  
+  ############## Problème !!! pourquoi est-ce que je dois inverser les couleurs par rapport à cells.highlight pour que ça fonctionne ?
   plot_umap = DimPlot(seurat_obj, 
                       reduction="umap",
                       pt.size = 0.1,
                       cells.highlight = list(cell_highlight, cell_nohighlight)) +
-  scale_color_manual(labels = c(highlight_cond, others_cond_group), values = c(color, "grey")) +
-    labs(color = "") +
-    ggtitle("")
-
+  scale_color_manual(labels = c(others_cond_group, highlight_cond), values = c("grey", color)) +
+  labs(color = "") +
+  ggtitle("")
+# 
+#    plot_umap_test = DimPlot(seurat_obj, 
+#                       reduction="umap",
+#                       pt.size = 0.1,
+#                       cells.highlight = list(cell_highlight, cell_nohighlight)) +
+#   scale_color_manual(labels =c(others_cond_group, highlight_cond), values = c("grey", color)) +
+#   labs(color = "") +
+#   ggtitle("")
+#    plot_umap_test
+   
   print(plot_umap)
   list_plot[[i]] = plot_umap
 
@@ -244,10 +277,12 @@ seurat_merged_indumap = ind_umap(seurat_merged)
 
 ```{r, Resolution choice, results='hold', fig.height=10, fig.width=16}
 
-cat("Based on the conditions we want to analyze, two resolutions can be interesting for downstream analysis :", "\n", 
+cat("Based on the conditions we want to analyze, 
+    two resolutions can be interesting for downstream analysis :", "\n", 
     "- resolution 0.06 for bigger clusters", "\n",
     "- resolution 0.25 for more precise clusters", "\n",
-    "We erase seurat_clusters meta.data column and we keep the two columns with clusters number for resolution 0.06 and 0.25.")
+    "We erase seurat_clusters meta.data column and we keep the 
+    two columns with clusters number for resolution 0.06 and 0.25.")
 
 seurat_common_merged@meta.data$seurat_clusters <- NULL
 seurat_common_merged@meta.data$ATAC_combined_snn_res.0.01 <- NULL
@@ -270,8 +305,10 @@ seurat_common_merged@meta.data$ATAC_combined_snn_res.0.9 <- NULL
 seurat_common_merged@meta.data$ATAC_combined_snn_res.1 <- NULL
 
 plot_clusters_seurat_common_merged = 
-  DimPlot(seurat_common_merged, reduction = "umap", group.by = "ATAC_combined_snn_res.0.06") + ggtitle("Resolution_0.06") | 
-  DimPlot(seurat_common_merged, reduction = "umap", group.by = "ATAC_combined_snn_res.0.25") + ggtitle("Resolution_0.25")
+  DimPlot(seurat_common_merged, reduction = "umap", group.by = "ATAC_combined_snn_res.0.06") + 
+  ggtitle("Resolution_0.06") | 
+  DimPlot(seurat_common_merged, reduction = "umap", group.by = "ATAC_combined_snn_res.0.25") + 
+  ggtitle("Resolution_0.25")
 plot_clusters_seurat_common_merged
 
 seurat_merged@meta.data$seurat_clusters <- NULL
@@ -295,8 +332,10 @@ seurat_merged@meta.data$peaks_snn_res.0.9 <- NULL
 seurat_merged@meta.data$peaks_snn_res.1 <- NULL
 
 plot_clusters_seurat_merged = 
-  DimPlot(seurat_merged, reduction = "umap", group.by = "peaks_snn_res.0.06") + ggtitle("Resolution_0.06") | 
-  DimPlot(seurat_merged, reduction = "umap", group.by = "peaks_snn_res.0.25") + ggtitle("Resolution_0.25")
+  DimPlot(seurat_merged, reduction = "umap", group.by = "peaks_snn_res.0.06") + 
+  ggtitle("Resolution_0.06") | 
+  DimPlot(seurat_merged, reduction = "umap", group.by = "peaks_snn_res.0.25") + 
+  ggtitle("Resolution_0.25")
 plot_clusters_seurat_merged
 
 ```
